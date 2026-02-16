@@ -240,7 +240,7 @@ export async function updateOrderStatus(
         {
           items: invoiceItems,
           subtotal: Number(order.subtotal),
-          shipping: Number(order.shipping),
+          shipping: Number(order.shippingCharge),
           tax: Number(order.tax),
           total: Number(order.total),
           address: addressStr,
