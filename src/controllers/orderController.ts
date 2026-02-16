@@ -58,6 +58,9 @@ export async function createOrder(
 
     // For RAZORPAY: check if there's already a pending order to avoid duplicates
     if (paymentMethod === 'RAZORPAY') {
+      // Only reuse orders created in the last 10 minutes (Razorpay orders expire ~15 min)
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+
       const existingPendingOrder = await prisma.order.findFirst({
         where: {
           userId: req.user.userId,
@@ -65,6 +68,7 @@ export async function createOrder(
           paymentStatus: 'PENDING',
           orderStatus: 'PENDING',
           razorpayOrderId: { not: null },
+          createdAt: { gte: tenMinutesAgo },
         },
         include: { items: true, address: true },
         orderBy: { createdAt: 'desc' },
@@ -87,6 +91,21 @@ export async function createOrder(
         });
         return;
       }
+
+      // Cancel any old expired pending Razorpay orders
+      await prisma.order.updateMany({
+        where: {
+          userId: req.user.userId,
+          paymentMethod: 'RAZORPAY',
+          paymentStatus: 'PENDING',
+          orderStatus: 'PENDING',
+          createdAt: { lt: tenMinutesAgo },
+        },
+        data: {
+          orderStatus: 'CANCELLED',
+          paymentStatus: 'FAILED',
+        },
+      });
     }
 
     // Calculate order totals

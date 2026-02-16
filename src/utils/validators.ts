@@ -154,8 +154,8 @@ export const couponSchema = z.object({
   minPurchase: z.number().min(0, 'Minimum purchase cannot be negative'),
   maxDiscount: z.number().positive('Max discount must be positive').optional().nullable(),
   usageLimit: z.number().int().positive('Usage limit must be positive'),
-  validFrom: z.string().datetime(),
-  validUntil: z.string().datetime(),
+  validFrom: z.string().refine((val) => !isNaN(Date.parse(val)), { message: 'Invalid date' }),
+  validUntil: z.string().refine((val) => !isNaN(Date.parse(val)), { message: 'Invalid date' }),
 });
 
 /* ──────────────────────────────────────── USER ──── */

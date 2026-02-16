@@ -151,13 +151,16 @@ export async function getVisitorStats(
         orderBy: { _count: { browser: 'desc' } },
       }),
 
-      // Recent visitors (last 50 unique sessions)
+      // Recent visitors (last 50 unique sessions, sorted by latest first)
       prisma.$queryRaw`
-        SELECT DISTINCT ON ("sessionId")
-          "id", "ip", "page", "device", "browser", "os", "sessionId", "userId", "createdAt"
-        FROM "Visitor"
-        WHERE "createdAt" >= ${since}
-        ORDER BY "sessionId", "createdAt" DESC
+        SELECT * FROM (
+          SELECT DISTINCT ON ("sessionId")
+            "id", "ip", "page", "device", "browser", "os", "sessionId", "userId", "createdAt"
+          FROM "Visitor"
+          WHERE "createdAt" >= ${since}
+          ORDER BY "sessionId", "createdAt" DESC
+        ) sub
+        ORDER BY "createdAt" DESC
         LIMIT 50
       `,
 

@@ -497,9 +497,27 @@ export async function deleteProduct(
   try {
     const { id } = req.params;
 
-    const product = await prisma.product.findUnique({ where: { id } });
+    const product = await prisma.product.findUnique({
+      where: { id },
+      include: { images: true },
+    });
     if (!product) {
       throw new NotFoundError('Product');
+    }
+
+    // Delete all product images from Cloudinary
+    for (const image of product.images) {
+      if (image.imageUrl && image.imageUrl.includes('cloudinary')) {
+        try {
+          const parts = image.imageUrl.split('/upload/');
+          if (parts[1]) {
+            const publicId = parts[1].replace(/\.[^.]+$/, '').replace(/^v\d+\//, '');
+            await deleteImage(publicId);
+          }
+        } catch (e) {
+          // Non-fatal — continue deleting other images
+        }
+      }
     }
 
     // Soft-delete: deactivate instead of hard-delete to preserve order history

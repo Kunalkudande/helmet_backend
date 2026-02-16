@@ -64,6 +64,9 @@ enum Category {
   HALF_FACE
   OPEN_FACE
   MODULAR
+  OFF_ROAD
+  KIDS
+  LADIES
 }
 
 model ProductImage {
@@ -91,11 +94,13 @@ model ProductVariant {
 }
 
 enum Size {
+  XS
   S
   M
   L
   XL
   XXL
+  FREE_SIZE
 }
 
 model ProductSpecification {
@@ -306,4 +311,27 @@ model Visitor {
   @@index([createdAt])
   @@index([sessionId])
   @@index([ip])
+}
+
+model BlogPost {
+  id          String        @id @default(uuid())
+  title       String
+  slug        String        @unique
+  excerpt     String        @db.Text
+  content     String        @db.Text
+  coverImage  String?
+  author      String        @default("Admin")
+  tags        String[]      @default([])
+  category    String        @default("General")
+  isPublished Boolean       @default(false)
+  publishedAt DateTime?
+  metaTitle   String?
+  metaDesc    String?       @db.Text
+  views       Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([slug])
+  @@index([isPublished])
+  @@index([publishedAt])
 }

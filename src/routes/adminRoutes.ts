@@ -7,6 +7,8 @@ import {
   approveReview,
   createCoupon,
   getCoupons,
+  deleteCoupon,
+  toggleCoupon,
   subscribeNewsletter,
 } from '../controllers/adminController';
 import { getVisitorStats } from '../controllers/visitorController';
@@ -44,6 +46,8 @@ router.put('/reviews/:id/approve', validateBody(approveReviewSchema), approveRev
 // Coupons
 router.get('/coupons', getCoupons);
 router.post('/coupons', validateBody(couponSchema), createCoupon);
+router.put('/coupons/:id/toggle', toggleCoupon);
+router.delete('/coupons/:id', deleteCoupon);
 
 // Visitors
 router.get('/visitors', getVisitorStats);

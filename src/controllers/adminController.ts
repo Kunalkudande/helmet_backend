@@ -184,6 +184,13 @@ export async function updateOrderStatus(
       where: { id },
       include: {
         user: { select: { email: true, fullName: true } },
+        items: {
+          include: {
+            product: { select: { name: true, price: true, discountPrice: true } },
+            variant: { select: { size: true, color: true, additionalPrice: true } },
+          },
+        },
+        address: true,
       },
     });
 
@@ -214,10 +221,36 @@ export async function updateOrderStatus(
     }
 
     if (orderStatus === 'DELIVERED') {
+      // Build invoice data from order details
+      const invoiceItems = order.items.map((item: any) => ({
+        name: `${item.product?.name || 'Product'}${item.variant ? ` (${item.variant.size}/${item.variant.color})` : ''}`,
+        quantity: item.quantity,
+        price: Number(item.price) * item.quantity,
+      }));
+
+      const addr = order.address;
+      const addressStr = addr
+        ? `${addr.fullName}, ${addr.addressLine1}${addr.addressLine2 ? ', ' + addr.addressLine2 : ''}, ${addr.city}, ${addr.state} - ${addr.pinCode}`
+        : 'N/A';
+
       sendOrderDeliveredEmail(
         order.user.email,
         order.user.fullName,
-        order.orderNumber
+        order.orderNumber,
+        {
+          items: invoiceItems,
+          subtotal: Number(order.subtotal),
+          shipping: Number(order.shipping),
+          tax: Number(order.tax),
+          total: Number(order.total),
+          address: addressStr,
+          paymentMethod: order.paymentMethod,
+          orderDate: new Date(order.createdAt).toLocaleDateString('en-IN', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+          }),
+        }
       );
     }
 
@@ -383,6 +416,62 @@ export async function getCoupons(
       orderBy: { createdAt: 'desc' },
     });
     res.json({ success: true, data: coupons });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * DELETE /api/admin/coupons/:id
+ * Delete a coupon
+ */
+export async function deleteCoupon(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    await prisma.coupon.delete({
+      where: { id },
+    });
+
+    res.json({
+      success: true,
+      data: null,
+      message: 'Coupon deleted successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * PUT /api/admin/coupons/:id
+ * Toggle coupon active status
+ */
+export async function toggleCoupon(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    const coupon = await prisma.coupon.findUnique({ where: { id } });
+    if (!coupon) throw new NotFoundError('Coupon');
+
+    const updated = await prisma.coupon.update({
+      where: { id },
+      data: { isActive: !coupon.isActive },
+    });
+
+    res.json({
+      success: true,
+      data: updated,
+      message: `Coupon ${updated.isActive ? 'activated' : 'deactivated'}`,
+    });
   } catch (error) {
     next(error);
   }

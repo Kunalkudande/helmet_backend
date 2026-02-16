@@ -11,6 +11,7 @@ import { AuthRequest } from '../types';
 import {
   sendVerificationEmail,
   sendPasswordResetEmail,
+  sendWelcomeEmail,
 } from '../services/emailService';
 import { AppError, NotFoundError } from '../middleware/errorHandler';
 
@@ -57,6 +58,9 @@ export async function register(
 
     // Send verification email (non-blocking)
     sendVerificationEmail(email, fullName, verificationToken);
+
+    // Send welcome email (non-blocking)
+    sendWelcomeEmail(email, fullName);
 
     // Generate tokens
     const tokenPayload = { userId: user.id, email: user.email, role: user.role };

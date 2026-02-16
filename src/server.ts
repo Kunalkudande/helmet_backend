@@ -27,6 +27,7 @@ import cartRoutes from './routes/cartRoutes';
 import userRoutes from './routes/userRoutes';
 import adminRoutes from './routes/adminRoutes';
 import visitorRoutes from './routes/visitorRoutes';
+import blogRoutes from './routes/blogRoutes';
 
 const app = express();
 const PORT = parseInt(env.PORT, 10);
@@ -91,6 +92,7 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/visitors', visitorRoutes);
+app.use('/api/blog', blogRoutes);
 
 // Health check — lightweight, no sensitive info
 app.get('/api/health', (_req, res) => {
@@ -101,6 +103,40 @@ app.get('/api/health', (_req, res) => {
       timestamp: new Date().toISOString(),
     },
   });
+});
+
+// Razorpay test endpoint — creates a ₹1 test order to verify connectivity
+app.get('/api/test-razorpay', async (_req, res) => {
+  try {
+    const { getRazorpayInstance } = await import('./config/razorpay');
+    const razorpay = getRazorpayInstance();
+
+    const order = await razorpay.orders.create({
+      amount: 100, // ₹1 in paise
+      currency: 'INR',
+      receipt: `test_${Date.now()}`,
+      notes: { purpose: 'connectivity_test' },
+    });
+
+    res.json({
+      success: true,
+      message: 'Razorpay is working!',
+      data: {
+        orderId: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        status: order.status,
+        keyId: process.env.RAZORPAY_KEY_ID,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      message: 'Razorpay failed',
+      error: error.message,
+      details: error.statusCode ? { statusCode: error.statusCode, description: error.error?.description } : undefined,
+    });
+  }
 });
 
 // Detailed health check — only in non-production or behind auth
