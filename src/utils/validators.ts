@@ -51,7 +51,14 @@ export const changePasswordSchema = z.object({
 export const createProductSchema = z.object({
   name: z.string().min(3, 'Product name must be at least 3 characters').max(200),
   brand: z.string().min(1, 'Brand is required'),
-  category: z.enum(['FULL_FACE', 'HALF_FACE', 'OPEN_FACE', 'MODULAR']),
+  category: z.enum([
+    // Helmets
+    'FULL_FACE', 'HALF_FACE', 'OPEN_FACE', 'MODULAR', 'OFF_ROAD', 'KIDS', 'LADIES',
+    // Riding Gear
+    'JACKETS', 'GLOVES', 'BOOTS', 'RIDING_PANTS',
+    // Accessories & More
+    'ACCESSORIES', 'PARTS', 'LUGGAGE', 'ELECTRONICS',
+  ]),
   description: z.string().min(20, 'Description must be at least 20 characters'),
   price: z.number().positive('Price must be greater than 0'),
   discountPrice: z.number().positive('Discount price must be greater than 0').optional().nullable(),
@@ -70,7 +77,7 @@ export const createProductSchema = z.object({
   variants: z
     .array(
       z.object({
-        size: z.enum(['S', 'M', 'L', 'XL', 'XXL']),
+        size: z.enum(['XS', 'S', 'M', 'L', 'XL', 'XXL', 'FREE_SIZE']),
         color: z.string().min(1, 'Color is required'),
         stock: z.number().int().min(0, 'Stock cannot be negative'),
         additionalPrice: z.number().min(0).optional(),
@@ -183,8 +190,55 @@ export const approveReviewSchema = z.object({
 /* ────────────────────────────────── CONTACT ──── */
 
 export const contactSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Please enter a valid email address'),
-  subject: z.string().min(5, 'Subject is required'),
-  message: z.string().min(10, 'Message must be at least 10 characters').max(2000),
+  name: z.string().min(2, 'Name must be at least 2 characters').max(100)
+    .regex(/^[a-zA-Z\s'.,]+$/, 'Name contains invalid characters'),
+  email: z.string().email('Please enter a valid email address').max(150),
+  subject: z.string().min(5, 'Subject is required').max(200)
+    .regex(/^[^<>"'`]+$/, 'Subject contains invalid characters'),
+  message: z.string().min(10, 'Message must be at least 10 characters').max(2000)
+    .regex(/^[^<>]+$/, 'Message contains invalid characters'),
+});
+
+/* ────────────────────────────── GUEST ORDER ──── */
+
+const sanitizedString = (min: number, max: number, label: string) =>
+  z.string()
+    .min(min, `${label} must be at least ${min} characters`)
+    .max(max, `${label} cannot exceed ${max} characters`)
+    .refine((v) => !/<script|javascript:|on\w+=/i.test(v), { message: `${label} contains invalid content` });
+
+export const guestOrderSchema = z.object({
+  contact: z.object({
+    name: sanitizedString(2, 100, 'Name'),
+    email: z.string().email('Enter a valid email address').max(150),
+    phone: z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit Indian mobile number'),
+  }),
+  address: z.object({
+    addressLine1: sanitizedString(5, 200, 'Address'),
+    addressLine2: z.string().max(200).optional(),
+    city: sanitizedString(2, 100, 'City'),
+    state: sanitizedString(2, 100, 'State'),
+    pincode: z.string().regex(/^\d{6}$/, 'Enter a valid 6-digit PIN code'),
+  }),
+  items: z.array(
+    z.object({
+      productId: z.string().uuid('Invalid product ID'),
+      variantId: z.string().uuid('Invalid variant ID').optional(),
+      quantity: z.number().int().min(1, 'Quantity must be at least 1').max(10, 'Maximum 10 per item'),
+    })
+  ).min(1, 'Order must contain at least one item').max(50, 'Too many items in order'),
+  paymentMethod: z.enum(['RAZORPAY', 'COD']),
+  couponCode: z.string().max(20).regex(/^[A-Z0-9_-]*$/, 'Invalid coupon code').optional(),
+  notes: z.string().max(500).optional(),
+});
+
+export const verifyGuestPaymentSchema = z.object({
+  razorpay_payment_id: z.string().min(1).max(100).regex(/^pay_[A-Za-z0-9]+$/, 'Invalid payment ID'),
+  razorpay_order_id: z.string().min(1).max(100).regex(/^order_[A-Za-z0-9]+$/, 'Invalid order ID'),
+  razorpay_signature: z.string().min(1).max(500),
+});
+
+export const validateCouponSchema = z.object({
+  couponCode: z.string().min(1).max(20).regex(/^[A-Za-z0-9_-]+$/, 'Invalid coupon code'),
+  subtotal: z.number().min(0).optional(),
 });

@@ -254,3 +254,29 @@ export async function deletePost(
     next(error);
   }
 }
+
+/**
+ * GET /api/blog/categories
+ * Get distinct blog categories with post counts (public)
+ */
+export async function getCategories(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const categories = await prisma.blogPost.groupBy({
+      by: ['category'],
+      where: { isPublished: true },
+      _count: { category: true },
+      orderBy: { _count: { category: 'desc' } },
+    });
+
+    res.json({
+      success: true,
+      data: categories.map(c => ({ name: c.category, count: c._count.category })),
+    });
+  } catch (error) {
+    next(error);
+  }
+}

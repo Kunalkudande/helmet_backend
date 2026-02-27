@@ -4,6 +4,7 @@ import { AuthRequest, PaginatedResponse } from '../types';
 import { getCache, setCache, deleteCachePattern } from '../services/cacheService';
 import { AppError, NotFoundError } from '../middleware/errorHandler';
 import { uploadMultipleImages, deleteImage } from '../services/uploadService';
+import { autofillProductDetails } from '../services/aiService';
 
 /**
  * Utility: generate slug from product name
@@ -723,6 +724,39 @@ export async function setPrimaryImage(
 }
 
 /**
+ * POST /api/products/autofill (Admin)
+ * Use AI with internet search to auto-fill product details from a product name
+ */
+export async function autofillProduct(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { productName } = req.body;
+
+    if (!productName || typeof productName !== 'string' || productName.trim().length < 3) {
+      throw new AppError('Product name must be at least 3 characters', 400);
+    }
+
+    const result = await autofillProductDetails(productName.trim());
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Product details fetched successfully via AI',
+    });
+  } catch (error: any) {
+    // Provide a user-friendly error instead of generic 500
+    if (error instanceof AppError) {
+      next(error);
+    } else {
+      next(new AppError(error.message || 'AI autofill failed', 500));
+    }
+  }
+}
+
+/**
  * GET /api/products/brands
  * Get all unique brands
  */
@@ -750,6 +784,36 @@ export async function getBrands(
     await setCache(cacheKey, brandList, 3600);
 
     res.json({ success: true, data: brandList });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /api/products/categories
+ * Get all active categories (public)
+ */
+export async function getPublicCategories(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const cacheKey = 'categories:public';
+    const cached = await getCache(cacheKey);
+    if (cached) {
+      res.json({ success: true, data: cached });
+      return;
+    }
+
+    const categories = await prisma.productCategory.findMany({
+      where: { isActive: true },
+      orderBy: [{ group: 'asc' }, { sortOrder: 'asc' }, { label: 'asc' }],
+      select: { value: true, label: true, group: true },
+    });
+
+    await setCache(cacheKey, categories, 3600);
+    res.json({ success: true, data: categories });
   } catch (error) {
     next(error);
   }

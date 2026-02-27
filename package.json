@@ -1,7 +1,7 @@
 {
-  "name": "helmet-ecommerce-backend",
+  "name": "bikersbrain-backend",
   "version": "1.0.0",
-  "description": "Backend API for Helmet E-Commerce Store",
+  "description": "Backend API for BikersBrain E-Commerce Store",
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
@@ -26,6 +26,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.10.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/compression": "^1.7.5",

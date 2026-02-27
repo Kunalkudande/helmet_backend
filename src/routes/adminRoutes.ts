@@ -10,6 +10,10 @@ import {
   deleteCoupon,
   toggleCoupon,
   subscribeNewsletter,
+  getCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
 } from '../controllers/adminController';
 import { getVisitorStats } from '../controllers/visitorController';
 import { authenticate } from '../middleware/auth';
@@ -51,5 +55,11 @@ router.delete('/coupons/:id', deleteCoupon);
 
 // Visitors
 router.get('/visitors', getVisitorStats);
+
+// Categories
+router.get('/categories', getCategories);
+router.post('/categories', createCategory);
+router.put('/categories/:id', updateCategory);
+router.delete('/categories/:id', deleteCategory);
 
 export default router;

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest, DashboardStats } from '../types';
 import { AppError, NotFoundError } from '../middleware/errorHandler';
+import { deleteCachePattern } from '../services/cacheService';
 import {
   sendOrderShippedEmail,
   sendOrderDeliveredEmail,
@@ -212,12 +213,16 @@ export async function updateOrderStatus(
 
     // Send status emails
     if (orderStatus === 'SHIPPED' && trackingNumber) {
+      if (order.user) {
       sendOrderShippedEmail(
         order.user.email,
         order.user.fullName,
         order.orderNumber,
         trackingNumber
       );
+      } else if (order.guestEmail && order.guestName) {
+        sendOrderShippedEmail(order.guestEmail, order.guestName, order.orderNumber, trackingNumber);
+      }
     }
 
     if (orderStatus === 'DELIVERED') {
@@ -231,11 +236,16 @@ export async function updateOrderStatus(
       const addr = order.address;
       const addressStr = addr
         ? `${addr.fullName}, ${addr.addressLine1}${addr.addressLine2 ? ', ' + addr.addressLine2 : ''}, ${addr.city}, ${addr.state} - ${addr.pinCode}`
-        : 'N/A';
+        : (order as any).guestAddressLine1
+          ? `${(order as any).guestName}, ${(order as any).guestAddressLine1}, ${(order as any).guestCity}, ${(order as any).guestState} - ${(order as any).guestPincode}`
+          : 'N/A';
 
+      const recipientEmail = order.user?.email || order.guestEmail;
+      const recipientName = order.user?.fullName || order.guestName;
+      if (recipientEmail && recipientName) {
       sendOrderDeliveredEmail(
-        order.user.email,
-        order.user.fullName,
+        recipientEmail,
+        recipientName,
         order.orderNumber,
         {
           items: invoiceItems,
@@ -252,6 +262,7 @@ export async function updateOrderStatus(
           }),
         }
       );
+      } // end if recipientEmail && recipientName
     }
 
     res.json({
@@ -504,3 +515,136 @@ export async function subscribeNewsletter(
     next(error);
   }
 }
+
+/* ═══════════════════════════════════════════ CATEGORY CRUD ═══ */
+
+/**
+ * GET /api/admin/categories
+ * Returns all categories enriched with a productCount field.
+ */
+export async function getCategories(
+  _req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const [categories, productCounts] = await Promise.all([
+      prisma.productCategory.findMany({
+        orderBy: [{ group: 'asc' }, { sortOrder: 'asc' }, { label: 'asc' }],
+      }),
+      prisma.product.groupBy({
+        by: ['category'],
+        _count: { _all: true },
+      }),
+    ]);
+
+    const countMap: Record<string, number> = {};
+    for (const row of productCounts) {
+      countMap[row.category] = row._count._all;
+    }
+
+    const enriched = categories.map((c) => ({
+      ...c,
+      productCount: countMap[c.value] ?? 0,
+    }));
+
+    res.json({ success: true, data: enriched });
+  } catch (error) { next(error); }
+}
+
+/**
+ * POST /api/admin/categories
+ */
+export async function createCategory(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { value, label, group, description, sortOrder, isActive } = req.body;
+
+    if (!value || !label || !group) {
+      throw new AppError('value, label and group are required', 400);
+    }
+
+    // Normalise: uppercase snake_case for value
+    const normValue = String(value).toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+
+    const existing = await prisma.productCategory.findUnique({ where: { value: normValue } });
+    if (existing) throw new AppError(`Category with value "${normValue}" already exists`, 400);
+
+    const category = await prisma.productCategory.create({
+      data: {
+        value: normValue,
+        label: String(label).trim(),
+        group: String(group).trim(),
+        description: description ? String(description).trim() : null,
+        sortOrder: typeof sortOrder === 'number' ? sortOrder : 0,
+        isActive: isActive !== false,
+      },
+    });
+    await deleteCachePattern('categories:public');
+    res.status(201).json({ success: true, data: category, message: 'Category created' });
+  } catch (error) { next(error); }
+}
+
+/**
+ * PUT /api/admin/categories/:id
+ */
+export async function updateCategory(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    const { label, group, description, sortOrder, isActive } = req.body;
+
+    const existing = await prisma.productCategory.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundError('Category');
+
+    const updated = await prisma.productCategory.update({
+      where: { id },
+      data: {
+        ...(label     !== undefined && { label: String(label).trim() }),
+        ...(group     !== undefined && { group: String(group).trim() }),
+        ...(description !== undefined && { description: description ? String(description).trim() : null }),
+        ...(sortOrder !== undefined && { sortOrder: Number(sortOrder) }),
+        ...(isActive  !== undefined && { isActive: Boolean(isActive) }),
+        updatedAt: new Date(),
+      },
+    });
+    await deleteCachePattern('categories:public');
+    res.json({ success: true, data: updated, message: 'Category updated' });
+  } catch (error) { next(error); }
+}
+
+/**
+ * DELETE /api/admin/categories/:id
+ */
+export async function deleteCategory(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { id } = req.params;
+
+    const existing = await prisma.productCategory.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundError('Category');
+
+    // Prevent deletion if products are using this category
+    const productCount = await prisma.product.count({ where: { category: existing.value } });
+    if (productCount > 0) {
+      throw new AppError(
+        `Cannot delete: ${productCount} product(s) use this category. Reassign them first.`,
+        400
+      );
+    }
+
+    await prisma.productCategory.delete({ where: { id } });
+    await deleteCachePattern('categories:public');
+    res.json({ success: true, data: null, message: 'Category deleted' });
+  } catch (error) { next(error); }
+}
+

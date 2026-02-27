@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   getPublishedPosts,
   getPostBySlug,
+  getCategories,
   getAllPosts,
   getPostById,
   createPost,
@@ -15,6 +16,7 @@ const router = Router();
 
 // Public routes
 router.get('/', getPublishedPosts);
+router.get('/categories', getCategories);  // must be before /:slug
 router.get('/:slug', getPostBySlug);
 
 // Admin routes

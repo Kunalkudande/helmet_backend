@@ -28,6 +28,7 @@ import userRoutes from './routes/userRoutes';
 import adminRoutes from './routes/adminRoutes';
 import visitorRoutes from './routes/visitorRoutes';
 import blogRoutes from './routes/blogRoutes';
+import contactRoutes from './routes/contactRoutes';
 
 const app = express();
 const PORT = parseInt(env.PORT, 10);
@@ -61,9 +62,19 @@ app.use(helmet({
 }));
 
 // CORS
+const allowedOrigins = env.FRONTEND_URL.split(',').map(origin => origin.trim());
 app.use(
   cors({
-    origin: env.FRONTEND_URL,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, Postman, curl)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
@@ -93,6 +104,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/visitors', visitorRoutes);
 app.use('/api/blog', blogRoutes);
+app.use('/api/contact', contactRoutes);
 
 // Health check — lightweight, no sensitive info
 app.get('/api/health', (_req, res) => {

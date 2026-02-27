@@ -114,3 +114,78 @@ export async function fetchPaymentDetails(paymentId: string) {
     throw new Error('Could not fetch payment details');
   }
 }
+
+/**
+ * Fetch Razorpay order details (includes 1CC shipping address)
+ */
+export async function fetchRazorpayOrder(orderId: string) {
+  try {
+    const razorpay = getRazorpayInstance();
+    const order = await razorpay.orders.fetch(orderId);
+    return order;
+  } catch (error) {
+    logger.error('Failed to fetch Razorpay order details:', error);
+    throw new Error('Could not fetch Razorpay order details');
+  }
+}
+
+/**
+ * Create a Razorpay 1CC (Magic Checkout) order with line items
+ */
+export async function createRazorpay1CCOrder(
+  amount: number,
+  receipt: string,
+  lineItems: { name: string; quantity: number; amount: number }[],
+  shippingFee: number,
+  customer?: { name?: string; email?: string; contact?: string },
+  notes: Record<string, string> = {}
+): Promise<RazorpayOrderResult> {
+  try {
+    if (amount <= 0) throw new Error('Invalid amount');
+
+    const razorpay = getRazorpayInstance();
+    const amountInPaise = Math.round(amount * 100);
+
+    // 1CC requires line_items for the order summary displayed in checkout
+    const options: any = {
+      amount: amountInPaise,
+      currency: 'INR',
+      receipt,
+      notes,
+      // 1CC specific fields
+      line_items_total: lineItems.reduce((sum, li) => sum + li.amount, 0),
+      line_items: lineItems.map((li) => ({
+        type: 'e-commerce',
+        name: li.name,
+        quantity: li.quantity,
+        amount: li.amount, // in paise
+      })),
+      shipping_fee: Math.round(shippingFee * 100),
+    };
+
+    // Pre-fill customer info if available
+    if (customer && (customer.name || customer.email || customer.contact)) {
+      options.customer = {};
+      if (customer.name) options.customer.name = customer.name;
+      if (customer.email) options.customer.email = customer.email;
+      if (customer.contact) options.customer.contact = customer.contact;
+    }
+
+    const order = await razorpay.orders.create(options);
+    logger.info(`Razorpay 1CC order created: ${order.id} (amount: ₹${amount})`);
+
+    return {
+      id: order.id,
+      amount: order.amount as number,
+      currency: order.currency,
+      receipt: order.receipt || receipt,
+    };
+  } catch (error) {
+    logger.error('Failed to create Razorpay 1CC order:', error);
+    const msg = (error as Error)?.message || '';
+    if (msg.includes('Invalid')) {
+      throw new Error('Invalid payment details');
+    }
+    throw new Error('Payment gateway error. Please try again.');
+  }
+}

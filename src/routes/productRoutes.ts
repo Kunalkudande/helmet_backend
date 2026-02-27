@@ -13,6 +13,8 @@ import {
   deleteProductImage,
   setPrimaryImage,
   getBrands,
+  getPublicCategories,
+  autofillProduct,
 } from '../controllers/productController';
 import { createReview } from '../controllers/userController';
 import { authenticate } from '../middleware/auth';
@@ -28,6 +30,7 @@ router.get('/', getProducts);
 router.get('/featured', getFeaturedProducts);
 router.get('/category-counts', getCategoryCounts);
 router.get('/brands', getBrands);
+router.get('/categories', getPublicCategories);
 router.get('/search/autocomplete', searchAutocomplete);
 router.get('/:slug', getProductBySlug);
 router.get('/:slug/related', getRelatedProducts);
@@ -36,6 +39,7 @@ router.get('/:slug/related', getRelatedProducts);
 router.post('/:productId/reviews', authenticate, validateBody(createReviewSchema), createReview);
 
 // Admin routes
+router.post('/autofill', authenticate, adminOnly, autofillProduct);
 router.post('/', authenticate, adminOnly, validateBody(createProductSchema), createProduct);
 router.put('/:id', authenticate, adminOnly, validateBody(updateProductSchema), updateProduct);
 router.delete('/:id', authenticate, adminOnly, deleteProduct);

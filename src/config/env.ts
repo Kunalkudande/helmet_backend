@@ -40,6 +40,9 @@ const envSchema = z.object({
 
   // Bcrypt
   BCRYPT_ROUNDS: z.string().default('10'),
+
+  // AI Autofill (Google Gemini API – optional)
+  GEMINI_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -70,6 +73,10 @@ export function validateEnv(): Env {
 
   if (!env.EMAIL_USER || !env.EMAIL_PASS) {
     logger.warn('⚠️  Email not configured – emails will not be sent');
+  }
+
+  if (!env.GEMINI_API_KEY) {
+    logger.warn('⚠️  Gemini API not configured – AI product autofill will not work');
   }
 
 
