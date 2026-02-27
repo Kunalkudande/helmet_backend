@@ -1221,6 +1221,7 @@ export async function verify1CCPayment(
             city: shippingAddress.city || '',
             state: shippingAddress.state || '',
             pinCode: shippingAddress.zipcode || shippingAddress.pincode || '',
+            addressType: 'HOME',
             isDefault: false,
           },
         });
