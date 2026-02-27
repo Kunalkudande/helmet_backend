@@ -1220,7 +1220,7 @@ export async function verify1CCPayment(
             addressLine2: shippingAddress.line2 || shippingAddress.addressLine2 || '',
             city: shippingAddress.city || '',
             state: shippingAddress.state || '',
-            pincode: shippingAddress.zipcode || shippingAddress.pincode || '',
+            pinCode: shippingAddress.zipcode || shippingAddress.pincode || '',
             isDefault: false,
           },
         });
