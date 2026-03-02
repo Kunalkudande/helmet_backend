@@ -159,8 +159,8 @@ export async function createOrder(
       }
     }
 
-    // Shipping: free above ₹999, else ₹99 (matches frontend constants)
-    const shippingCharge = subtotal >= 999 ? 0 : 99;
+    // Shipping: free above ₹2,999, else ₹99 (matches frontend constants)
+    const shippingCharge = subtotal >= 2999 ? 0 : 99;
     const tax = 0; // GST already included in product prices
     const total = subtotal - discount + shippingCharge + tax;
 
@@ -706,7 +706,7 @@ export async function createGuestOrder(
       }
     }
 
-    const shippingCharge = subtotal >= 999 ? 0 : 99;
+    const shippingCharge = subtotal >= 2999 ? 0 : 99;
     const tax = 0; // GST already included in product prices
     const total = subtotal - discount + shippingCharge + tax;
     const orderNumber = generateOrderNumber();
@@ -945,7 +945,7 @@ export async function createRazorpayCheckout(
       }
     }
 
-    const shippingCharge = subtotal >= 999 ? 0 : 99;
+    const shippingCharge = subtotal >= 2999 ? 0 : 99;
     const tax = 0; // GST already included in product prices
     const total = subtotal - discount + shippingCharge + tax;
     const orderNumber = generateOrderNumber();
@@ -1093,7 +1093,7 @@ export async function createGuestRazorpayCheckout(
       }
     }
 
-    const shippingCharge = subtotal >= 999 ? 0 : 99;
+    const shippingCharge = subtotal >= 2999 ? 0 : 99;
     const tax = 0; // GST already included in product prices
     const total = subtotal - discount + shippingCharge + tax;
     const orderNumber = generateOrderNumber();

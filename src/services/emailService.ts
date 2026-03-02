@@ -2,7 +2,7 @@ import { createEmailTransporter } from '../config/email';
 import { logger } from '../utils/logger';
 import { EmailOptions } from '../types';
 
-const FROM = process.env.EMAIL_FROM || 'noreply@helmetstore.com';
+const FROM = process.env.EMAIL_FROM || 'bikersbrain.official@gmail.com';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const SITE_NAME = 'Bikers Brain';
 
@@ -76,9 +76,9 @@ export async function sendWelcomeEmail(
         <p style="color: #374151; line-height: 1.6;">Here's what you can look forward to:</p>
         <ul style="color: #374151; line-height: 2;">
           <li>🛡️ Premium ISI & DOT certified helmets</li>
-          <li>🚚 Fast & free shipping on orders over ₹2,000</li>
+          <li>🚚 Fast & free shipping on orders over ₹2,999</li>
           <li>💰 Exclusive member-only discounts</li>
-          <li>🔄 Easy 7-day returns</li>
+          <li>🔄 Easy 3-day returns</li>
         </ul>
         <div style="text-align: center; margin: 32px 0;">
           <a href="${shopUrl}" style="background: #FF6B35; color: #fff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Start Shopping</a>
