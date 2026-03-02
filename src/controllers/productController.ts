@@ -808,8 +808,8 @@ export async function getPublicCategories(
 
     const categories = await prisma.productCategory.findMany({
       where: { isActive: true },
-      orderBy: [{ group: 'asc' }, { sortOrder: 'asc' }, { label: 'asc' }],
-      select: { value: true, label: true, group: true },
+      orderBy: [{ groupSortOrder: 'asc' }, { group: 'asc' }, { sortOrder: 'asc' }, { label: 'asc' }],
+      select: { id: true, value: true, label: true, group: true, parentId: true, sortOrder: true, groupSortOrder: true },
     });
 
     await setCache(cacheKey, categories, 3600);

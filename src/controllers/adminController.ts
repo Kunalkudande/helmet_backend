@@ -530,7 +530,7 @@ export async function getCategories(
   try {
     const [categories, productCounts] = await Promise.all([
       prisma.productCategory.findMany({
-        orderBy: [{ group: 'asc' }, { sortOrder: 'asc' }, { label: 'asc' }],
+        orderBy: [{ groupSortOrder: 'asc' }, { group: 'asc' }, { sortOrder: 'asc' }, { label: 'asc' }],
       }),
       prisma.product.groupBy({
         by: ['category'],
@@ -561,7 +561,7 @@ export async function createCategory(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { value, label, group, description, sortOrder, isActive } = req.body;
+    const { value, label, group, description, sortOrder, groupSortOrder, isActive, parentId } = req.body;
 
     if (!value || !label || !group) {
       throw new AppError('value, label and group are required', 400);
@@ -580,7 +580,9 @@ export async function createCategory(
         group: String(group).trim(),
         description: description ? String(description).trim() : null,
         sortOrder: typeof sortOrder === 'number' ? sortOrder : 0,
+        groupSortOrder: typeof groupSortOrder === 'number' ? groupSortOrder : 0,
         isActive: isActive !== false,
+        ...(parentId && { parentId: String(parentId) }),
       },
     });
     await deleteCachePattern('categories:public');
@@ -598,7 +600,7 @@ export async function updateCategory(
 ): Promise<void> {
   try {
     const { id } = req.params;
-    const { label, group, description, sortOrder, isActive } = req.body;
+    const { label, group, description, sortOrder, groupSortOrder, isActive, parentId } = req.body;
 
     const existing = await prisma.productCategory.findUnique({ where: { id } });
     if (!existing) throw new NotFoundError('Category');
@@ -610,7 +612,9 @@ export async function updateCategory(
         ...(group     !== undefined && { group: String(group).trim() }),
         ...(description !== undefined && { description: description ? String(description).trim() : null }),
         ...(sortOrder !== undefined && { sortOrder: Number(sortOrder) }),
+        ...(groupSortOrder !== undefined && { groupSortOrder: Number(groupSortOrder) }),
         ...(isActive  !== undefined && { isActive: Boolean(isActive) }),
+        ...(parentId !== undefined && { parentId: parentId || null }),
         updatedAt: new Date(),
       },
     });
@@ -645,6 +649,110 @@ export async function deleteCategory(
     await prisma.productCategory.delete({ where: { id } });
     await deleteCachePattern('categories:public');
     res.json({ success: true, data: null, message: 'Category deleted' });
+  } catch (error) { next(error); }
+}
+
+/**
+ * PUT /api/admin/categories/reorder
+ * Batch-update sortOrder and/or groupSortOrder for multiple categories.
+ */
+export async function reorderCategories(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new AppError('items array is required', 400);
+    }
+
+    await prisma.$transaction(
+      items.map((item: { id: string; sortOrder?: number; groupSortOrder?: number }) =>
+        prisma.productCategory.update({
+          where: { id: item.id },
+          data: {
+            ...(item.sortOrder !== undefined && { sortOrder: item.sortOrder }),
+            ...(item.groupSortOrder !== undefined && { groupSortOrder: item.groupSortOrder }),
+            updatedAt: new Date(),
+          },
+        })
+      )
+    );
+
+    await deleteCachePattern('categories:public');
+    res.json({ success: true, message: 'Categories reordered' });
+  } catch (error) { next(error); }
+}
+
+/* ─── Site Settings ────────────────────────────────────────────────── */
+
+/**
+ * GET /api/admin/settings
+ * Returns all site settings (admin only)
+ */
+export async function getSettings(
+  _req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const rows = await prisma.siteSetting.findMany();
+    const settings: Record<string, string> = {};
+    for (const row of rows) settings[row.key] = row.value;
+    res.json({ success: true, data: settings });
+  } catch (error) { next(error); }
+}
+
+/**
+ * PUT /api/admin/settings
+ * Upsert one or more settings { key: value, ... }
+ */
+export async function updateSettings(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const body = req.body as Record<string, string>;
+    if (!body || typeof body !== 'object' || Object.keys(body).length === 0) {
+      throw new AppError('Settings object is required', 400);
+    }
+
+    await prisma.$transaction(
+      Object.entries(body).map(([key, value]) =>
+        prisma.siteSetting.upsert({
+          where: { key },
+          create: { key, value: String(value) },
+          update: { value: String(value) },
+        })
+      )
+    );
+
+    res.json({ success: true, message: 'Settings updated' });
+  } catch (error) { next(error); }
+}
+
+/**
+ * GET /api/settings/public
+ * Returns only public-visible settings (no auth required)
+ * Currently: cod_enabled
+ */
+export async function getPublicSettings(
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const PUBLIC_KEYS = ['cod_enabled'];
+    const rows = await prisma.siteSetting.findMany({
+      where: { key: { in: PUBLIC_KEYS } },
+    });
+    const settings: Record<string, string> = {};
+    for (const row of rows) settings[row.key] = row.value;
+    // Default cod_enabled to true if not set
+    if (!settings.cod_enabled) settings.cod_enabled = 'true';
+    res.json({ success: true, data: settings });
   } catch (error) { next(error); }
 }
 

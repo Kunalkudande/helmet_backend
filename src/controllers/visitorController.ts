@@ -3,9 +3,9 @@ import { prisma } from '../config/database';
 import { AuthRequest } from '../types';
 
 /**
- * Parse user-agent string to extract device, browser, and OS
+ * Extract device, browser, and OS from a user-agent string.
  */
-function parseUserAgent(ua: string = '') {
+function parseUserAgent(ua: string = ''): { device: string; browser: string; os: string } {
   const lower = ua.toLowerCase();
 
   // Device
@@ -13,20 +13,20 @@ function parseUserAgent(ua: string = '') {
   if (/mobile|android.*mobile|iphone|ipod/.test(lower)) device = 'mobile';
   else if (/tablet|ipad|android(?!.*mobile)/.test(lower)) device = 'tablet';
 
-  // Browser
+  // Browser (order matters — Edge contains "chrome", so check it first)
   let browser = 'Other';
   if (lower.includes('edg/')) browser = 'Edge';
-  else if (lower.includes('chrome')) browser = 'Chrome';
+  else if (lower.includes('opr/') || lower.includes('opera')) browser = 'Opera';
+  else if (lower.includes('chrome') && !lower.includes('chromium')) browser = 'Chrome';
   else if (lower.includes('firefox')) browser = 'Firefox';
-  else if (lower.includes('safari')) browser = 'Safari';
-  else if (lower.includes('opera') || lower.includes('opr/')) browser = 'Opera';
+  else if (lower.includes('safari') && !lower.includes('chrome')) browser = 'Safari';
 
   // OS
   let os = 'Other';
   if (lower.includes('windows')) os = 'Windows';
   else if (lower.includes('mac os') || lower.includes('macintosh')) os = 'macOS';
   else if (lower.includes('android')) os = 'Android';
-  else if (lower.includes('iphone') || lower.includes('ipad')) os = 'iOS';
+  else if (/iphone|ipad|ipod/.test(lower)) os = 'iOS';
   else if (lower.includes('linux')) os = 'Linux';
 
   return { device, browser, os };
@@ -34,25 +34,35 @@ function parseUserAgent(ua: string = '') {
 
 /**
  * POST /api/visitors/track
- * Record a visitor session (public — called once per browser session from frontend)
+ *
+ * Records one visit per browser session.
+ * The frontend generates a sessionId (stored in sessionStorage) and calls this
+ * once on initial load. If the sessionId already exists we skip — no duplicates.
  */
 export async function trackVisit(
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ): Promise<void> {
   try {
     const { page, referrer, sessionId } = req.body;
 
     if (!page || !sessionId) {
-      res.status(400).json({ success: false, message: 'page and sessionId are required' });
+      res.status(400).json({ success: false, message: 'page and sessionId required' });
       return;
     }
 
-    // SECURITY: Truncate inputs to prevent storing massive strings in DB
+    // Sanitise inputs
     const safePage = String(page).slice(0, 500);
     const safeReferrer = referrer ? String(referrer).slice(0, 1000) : null;
     const safeSessionId = String(sessionId).slice(0, 100);
+
+    // One row per session — skip if already tracked
+    const exists = await prisma.visitor.findUnique({ where: { sessionId: safeSessionId } });
+    if (exists) {
+      res.json({ success: true });
+      return;
+    }
 
     const ip =
       (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
@@ -72,20 +82,20 @@ export async function trackVisit(
         browser,
         os,
         sessionId: safeSessionId,
-        userId: null, // Never accept userId from unauthenticated request
       },
     });
 
     res.json({ success: true });
-  } catch (error) {
-    // Don't let tracking errors break the site — silently fail
+  } catch {
+    // Never let tracking errors break the user experience
     res.json({ success: true });
   }
 }
 
 /**
- * GET /api/admin/visitors
- * Get visitor analytics (admin only)
+ * GET /api/admin/visitors?days=30
+ *
+ * Returns simple, actionable analytics for the admin dashboard.
  */
 export async function getVisitorStats(
   req: AuthRequest,
@@ -93,40 +103,45 @@ export async function getVisitorStats(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { days = '30' } = req.query;
-    const daysNum = Math.min(90, Math.max(1, parseInt(days as string, 10)));
+    const daysNum = Math.min(90, Math.max(1, parseInt(req.query.days as string, 10) || 30));
 
     const since = new Date();
     since.setDate(since.getDate() - daysNum);
     since.setHours(0, 0, 0, 0);
 
-    // Run all queries in parallel
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
     const [
-      totalPageViews,
-      uniqueVisitors,
-      uniqueSessions,
+      totalVisitors,
+      uniqueIPs,
+      todayVisitors,
+      todayUniqueIPs,
       topPages,
       deviceBreakdown,
       browserBreakdown,
       recentVisitors,
       dailyVisits,
     ] = await Promise.all([
-      // Total page views
+      // Total sessions in period
       prisma.visitor.count({ where: { createdAt: { gte: since } } }),
 
-      // Unique visitors (by IP)
+      // Unique IPs in period
       prisma.visitor.groupBy({
         by: ['ip'],
         where: { createdAt: { gte: since } },
-      }).then((r: any[]) => r.length),
+      }).then((rows) => rows.length),
 
-      // Unique sessions
+      // Today's sessions
+      prisma.visitor.count({ where: { createdAt: { gte: todayStart } } }),
+
+      // Today's unique IPs
       prisma.visitor.groupBy({
-        by: ['sessionId'],
-        where: { createdAt: { gte: since } },
-      }).then((r: any[]) => r.length),
+        by: ['ip'],
+        where: { createdAt: { gte: todayStart } },
+      }).then((rows) => rows.length),
 
-      // Top pages
+      // Top landing pages
       prisma.visitor.groupBy({
         by: ['page'],
         where: { createdAt: { gte: since } },
@@ -151,26 +166,28 @@ export async function getVisitorStats(
         orderBy: { _count: { browser: 'desc' } },
       }),
 
-      // Recent visitors (last 50 unique sessions, sorted by latest first)
-      prisma.$queryRaw`
-        SELECT * FROM (
-          SELECT DISTINCT ON ("sessionId")
-            "id", "ip", "page", "device", "browser", "os", "sessionId", "userId", "createdAt"
-          FROM "Visitor"
-          WHERE "createdAt" >= ${since}
-          ORDER BY "sessionId", "createdAt" DESC
-        ) sub
-        ORDER BY "createdAt" DESC
-        LIMIT 50
-      `,
+      // Recent 50 visitors
+      prisma.visitor.findMany({
+        where: { createdAt: { gte: since } },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        select: {
+          ip: true,
+          page: true,
+          device: true,
+          browser: true,
+          os: true,
+          referrer: true,
+          createdAt: true,
+        },
+      }),
 
-      // Daily visit counts for chart
+      // Daily visitor counts for chart
       prisma.$queryRaw`
-        SELECT 
-          DATE("createdAt") as date,
-          COUNT(*)::int as "pageViews",
-          COUNT(DISTINCT "ip")::int as "uniqueVisitors",
-          COUNT(DISTINCT "sessionId")::int as "sessions"
+        SELECT
+          DATE("createdAt")               AS date,
+          COUNT(*)::int                   AS visitors,
+          COUNT(DISTINCT "ip")::int       AS "uniqueIPs"
         FROM "Visitor"
         WHERE "createdAt" >= ${since}
         GROUP BY DATE("createdAt")
@@ -178,29 +195,18 @@ export async function getVisitorStats(
       `,
     ]);
 
-    // Today's stats
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayViews = await prisma.visitor.count({ where: { createdAt: { gte: todayStart } } });
-    const todayUnique = await prisma.visitor.groupBy({
-      by: ['ip'],
-      where: { createdAt: { gte: todayStart } },
-    }).then((r: any[]) => r.length);
-
     res.json({
       success: true,
       data: {
         overview: {
-          totalPageViews,
-          uniqueVisitors,
-          uniqueSessions,
-          avgPagesPerSession: uniqueSessions > 0 ? Math.round((totalPageViews / uniqueSessions) * 10) / 10 : 0,
+          totalVisitors,
+          uniqueIPs,
         },
         today: {
-          pageViews: todayViews,
-          uniqueVisitors: todayUnique,
+          visitors: todayVisitors,
+          uniqueIPs: todayUniqueIPs,
         },
-        topPages: topPages.map((p: any) => ({ page: p.page, views: p._count.page })),
+        topPages: topPages.map((p: any) => ({ page: p.page, count: p._count.page })),
         devices: deviceBreakdown.map((d: any) => ({ device: d.device || 'Unknown', count: d._count.device })),
         browsers: browserBreakdown.map((b: any) => ({ browser: b.browser || 'Unknown', count: b._count.browser })),
         recentVisitors,

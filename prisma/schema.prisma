@@ -66,7 +66,11 @@ model ProductCategory {
   group       String   @default("Other")  // e.g. "Helmets", "Riding Gear"
   description String?            // short description shown in the form
   sortOrder   Int      @default(0)
+  groupSortOrder Int   @default(0)
   isActive    Boolean  @default(true)
+  parentId    String?
+  parent      ProductCategory?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    ProductCategory[] @relation("CategoryTree")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -307,19 +311,15 @@ model Visitor {
   id         String   @id @default(uuid())
   ip         String
   userAgent  String?  @db.Text
-  page       String
+  page       String                     // landing page
   referrer   String?
-  country    String?
-  city       String?
-  device     String?  // mobile, tablet, desktop
+  device     String?                    // mobile, tablet, desktop
   browser    String?
   os         String?
-  sessionId  String   // groups page views into sessions
-  userId     String?  // if logged in
+  sessionId  String   @unique           // one row per session
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
-  @@index([sessionId])
   @@index([ip])
 }
 
@@ -344,4 +344,10 @@ model BlogPost {
   @@index([slug])
   @@index([isPublished])
   @@index([publishedAt])
+}
+
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

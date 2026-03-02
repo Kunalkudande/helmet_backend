@@ -33,6 +33,14 @@ export async function createOrder(
 
     const { addressId, paymentMethod, couponCode, notes } = req.body;
 
+    // Check if COD is disabled
+    if (paymentMethod === 'COD') {
+      const codSetting = await prisma.siteSetting.findUnique({ where: { key: 'cod_enabled' } });
+      if (codSetting && codSetting.value === 'false') {
+        throw new AppError('Cash on Delivery is currently unavailable. Please choose online payment.', 400);
+      }
+    }
+
     // Verify address belongs to user
     const address = await prisma.address.findUnique({ where: { id: addressId } });
     if (!address || address.userId !== req.user.userId) {
@@ -643,6 +651,14 @@ export async function createGuestOrder(
     }
     if (!['RAZORPAY', 'COD'].includes(paymentMethod)) {
       throw new AppError('Invalid payment method', 400);
+    }
+
+    // Check if COD is disabled
+    if (paymentMethod === 'COD') {
+      const codSetting = await prisma.siteSetting.findUnique({ where: { key: 'cod_enabled' } });
+      if (codSetting && codSetting.value === 'false') {
+        throw new AppError('Cash on Delivery is currently unavailable. Please choose online payment.', 400);
+      }
     }
 
     // Re-fetch product details from DB (never trust client-sent prices)
