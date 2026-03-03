@@ -194,7 +194,7 @@ async function startServer(): Promise<void> {
 
     // Verify external service configs
     await verifyCloudinaryConfig();
-    await verifyEmailConfig();
+    verifyEmailConfig(); // fire-and-forget — runs after startup, won't block
 
     // Start HTTP server
     app.listen(PORT, () => {
