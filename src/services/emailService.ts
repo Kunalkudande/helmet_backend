@@ -3,6 +3,7 @@ import { logger } from '../utils/logger';
 import { EmailOptions } from '../types';
 
 const FROM = process.env.EMAIL_FROM || 'bikersbrain.official@gmail.com';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || process.env.EMAIL_FROM || 'bikersbrain.official@gmail.com';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const SITE_NAME = 'Bikers Brain';
 
@@ -300,6 +301,110 @@ export async function sendOrderDeliveredEmail(
         ${invoiceHtml}
         <div style="text-align: center; margin: 24px 0;">
           <a href="${reviewUrl}" style="background: #FF6B35; color: #fff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Write a Review</a>
+        </div>
+      </div>
+    `),
+  });
+}
+
+/**
+ * Send admin notification email when a new order is placed
+ */
+export async function sendAdminNewOrderEmail(orderDetails: {
+  orderNumber: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  total: number;
+  paymentMethod: string;
+  paymentStatus: string;
+  items: { name: string; quantity: number; price: number }[];
+  shippingAddress: string;
+  isGuest: boolean;
+}): Promise<void> {
+  const {
+    orderNumber, customerName, customerEmail, customerPhone,
+    total, paymentMethod, paymentStatus, items, shippingAddress, isGuest,
+  } = orderDetails;
+
+  const adminOrderUrl = `${FRONTEND_URL}/admin/orders`;
+  const itemsHtml = items
+    .map(
+      (item) => `
+      <tr>
+        <td style="padding: 10px 12px; border-bottom: 1px solid #f3f4f6; color: #374151; font-size: 14px;">${item.name}</td>
+        <td style="padding: 10px 12px; border-bottom: 1px solid #f3f4f6; text-align: center; color: #374151; font-size: 14px;">${item.quantity}</td>
+        <td style="padding: 10px 12px; border-bottom: 1px solid #f3f4f6; text-align: right; color: #374151; font-size: 14px;">₹${item.price.toLocaleString('en-IN')}</td>
+      </tr>`
+    )
+    .join('');
+
+  const paymentBadgeColor = paymentStatus === 'PAID' ? '#059669' : '#D97706';
+  const paymentBadgeText = paymentStatus === 'PAID' ? '✅ PAID' : '⏳ PENDING (COD)';
+
+  await sendEmail({
+    to: ADMIN_EMAIL,
+    subject: `🛒 New Order #${orderNumber} — ₹${total.toLocaleString('en-IN')} by ${customerName}`,
+    html: emailWrapper(`
+      <div style="padding: 32px;">
+        <h2 style="color: #1F2937; margin: 0 0 20px;">🛒 New Order Received!</h2>
+
+        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+          <table style="width: 100%;">
+            <tr>
+              <td style="color: #374151; font-size: 14px;"><strong>Order #:</strong> ${orderNumber}</td>
+              <td style="text-align: right;">
+                <span style="background: ${paymentBadgeColor}; color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600;">${paymentBadgeText}</span>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <h3 style="color: #1F2937; margin: 0 0 12px; font-size: 15px;">👤 Customer Details ${isGuest ? '<span style="color: #9CA3AF; font-weight: normal;">(Guest)</span>' : ''}</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+          <tr>
+            <td style="padding: 8px 12px; font-weight: 600; color: #666; background: #f9fafb; width: 120px; font-size: 13px;">Name</td>
+            <td style="padding: 8px 12px; font-size: 14px; color: #1f2937;">${customerName}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; font-weight: 600; color: #666; background: #f9fafb; font-size: 13px;">Email</td>
+            <td style="padding: 8px 12px; font-size: 14px;"><a href="mailto:${customerEmail}" style="color: #FF6B35;">${customerEmail}</a></td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; font-weight: 600; color: #666; background: #f9fafb; font-size: 13px;">Phone</td>
+            <td style="padding: 8px 12px; font-size: 14px;"><a href="tel:+91${customerPhone}" style="color: #FF6B35;">+91 ${customerPhone}</a></td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 12px; font-weight: 600; color: #666; background: #f9fafb; font-size: 13px;">Payment</td>
+            <td style="padding: 8px 12px; font-size: 14px; color: #1f2937;">${paymentMethod === 'COD' ? 'Cash on Delivery' : 'Online (Razorpay)'}</td>
+          </tr>
+        </table>
+
+        <h3 style="color: #1F2937; margin: 0 0 12px; font-size: 15px;">📦 Order Items</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+          <thead>
+            <tr style="background: #F9FAFB;">
+              <th style="padding: 10px 12px; text-align: left; color: #374151; font-size: 13px;">Item</th>
+              <th style="padding: 10px 12px; text-align: center; color: #374151; font-size: 13px;">Qty</th>
+              <th style="padding: 10px 12px; text-align: right; color: #374151; font-size: 13px;">Price</th>
+            </tr>
+          </thead>
+          <tbody>${itemsHtml}</tbody>
+        </table>
+
+        <div style="text-align: right; padding: 16px; background: #FFF7ED; border: 1px solid #FDBA74; border-radius: 6px; margin-bottom: 24px;">
+          <strong style="color: #1F2937; font-size: 20px;">Total: ₹${total.toLocaleString('en-IN')}</strong>
+        </div>
+
+        <h3 style="color: #1F2937; margin: 0 0 8px; font-size: 15px;">🏠 Shipping Address</h3>
+        <p style="color: #555; line-height: 1.6; margin: 0 0 24px; font-size: 14px; background: #f9fafb; padding: 12px; border-radius: 6px;">${shippingAddress}</p>
+
+        <div style="text-align: center; margin: 24px 0 8px;">
+          <a href="${adminOrderUrl}" style="background: #FF6B35; color: #fff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">View in Admin Panel</a>
+        </div>
+        <div style="text-align: center;">
+          <a href="tel:+91${customerPhone}" style="display: inline-block; background: #1f2937; color: #fff; padding: 10px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; margin: 4px;">📞 Call Customer</a>
+          <a href="mailto:${customerEmail}" style="display: inline-block; background: #1f2937; color: #fff; padding: 10px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; margin: 4px;">📧 Email Customer</a>
         </div>
       </div>
     `),

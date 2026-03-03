@@ -192,6 +192,18 @@ export const contactSchema = z.object({
     .regex(/^[^<>]+$/, 'Message contains invalid characters'),
 });
 
+export const bulkInquirySchema = z.object({
+  name: z.string().min(2, 'Name is required').max(100),
+  email: z.string().email('Enter a valid email').max(150),
+  phone: z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit phone number'),
+  businessName: z.string().max(200).optional().default(''),
+  quantity: z.number().int().min(1, 'Quantity must be at least 1').max(100000),
+  message: z.string().max(2000).optional().default(''),
+  productName: z.string().min(1, 'Product name is required').max(300),
+  productSlug: z.string().min(1).max(300),
+  productUrl: z.string().max(500).optional().default(''),
+});
+
 /* ────────────────────────────── GUEST ORDER ──── */
 
 const sanitizedString = (min: number, max: number, label: string) =>

@@ -44,6 +44,9 @@ const envSchema = z.object({
 
   // AI Autofill (Google Gemini API – optional)
   GEMINI_API_KEY: z.string().optional(),
+
+  // Admin WhatsApp number for bulk inquiry notifications (e.g. 919876543210)
+  ADMIN_WHATSAPP: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

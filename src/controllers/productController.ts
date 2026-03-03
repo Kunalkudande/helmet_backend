@@ -759,13 +759,13 @@ export async function autofillProduct(
   next: NextFunction
 ): Promise<void> {
   try {
-    const { productName } = req.body;
+    const { productName, category } = req.body;
 
     if (!productName || typeof productName !== 'string' || productName.trim().length < 3) {
       throw new AppError('Product name must be at least 3 characters', 400);
     }
 
-    const result = await autofillProductDetails(productName.trim());
+    const result = await autofillProductDetails(productName.trim(), category || undefined);
 
     res.json({
       success: true,

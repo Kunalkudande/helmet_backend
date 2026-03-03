@@ -4,7 +4,7 @@ import { prisma } from '../config/database';
 import { AuthRequest } from '../types';
 import { AppError, NotFoundError } from '../middleware/errorHandler';
 import { createRazorpayOrder, createRazorpay1CCOrder, verifyRazorpaySignature, fetchPaymentDetails, fetchRazorpayOrder } from '../services/paymentService';
-import { sendOrderConfirmationEmail } from '../services/emailService';
+import { sendOrderConfirmationEmail, sendAdminNewOrderEmail } from '../services/emailService';
 import { logger } from '../utils/logger';
 
 /**
@@ -237,20 +237,37 @@ export async function createOrder(
       });
     }
 
-    // Send confirmation email (non-blocking)
-    const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
-    if (user) {
-      sendOrderConfirmationEmail(
-        user.email,
-        user.fullName,
+    // Send confirmation email (non-blocking) — only for COD; Razorpay emails sent after payment verification
+    if (paymentMethod === 'COD') {
+      const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
+      if (user) {
+        sendOrderConfirmationEmail(
+          user.email,
+          user.fullName,
+          orderNumber,
+          total,
+          orderItems.map((i: any) => ({
+            name: i.productName,
+            quantity: i.quantity,
+            price: i.subtotal,
+          }))
+        );
+      }
+
+      // Admin notification email (non-blocking)
+      const addr = await prisma.address.findUnique({ where: { id: addressId } });
+      sendAdminNewOrderEmail({
         orderNumber,
+        customerName: user?.fullName || 'Registered User',
+        customerEmail: user?.email || '',
+        customerPhone: user?.phone || addr?.phone || '',
         total,
-        orderItems.map((i: any) => ({
-          name: i.productName,
-          quantity: i.quantity,
-          price: i.subtotal,
-        }))
-      );
+        paymentMethod,
+        paymentStatus: 'PENDING',
+        items: orderItems.map((i: any) => ({ name: i.productName, quantity: i.quantity, price: i.subtotal })),
+        shippingAddress: addr ? `${addr.fullName}, ${addr.addressLine1}${addr.addressLine2 ? ', ' + addr.addressLine2 : ''}, ${addr.city}, ${addr.state} - ${addr.pinCode}` : 'N/A',
+        isGuest: false,
+      }).catch(err => logger.error('Admin order email failed:', err));
     }
 
     res.status(201).json({
@@ -387,6 +404,37 @@ export async function verifyPayment(
 
       return updatedOrder;
     });
+
+    // Admin notification for confirmed payment
+    const paidUser = await prisma.user.findUnique({ where: { id: existingOrder.userId! } });
+    const paidAddr = existingOrder.addressId
+      ? await prisma.address.findUnique({ where: { id: existingOrder.addressId } })
+      : null;
+
+    // Send customer confirmation email (non-blocking)
+    if (paidUser) {
+      sendOrderConfirmationEmail(
+        paidUser.email,
+        paidUser.fullName,
+        existingOrder.orderNumber,
+        Number(existingOrder.total),
+        order.items.map((i: any) => ({ name: i.productName, quantity: i.quantity, price: Number(i.subtotal) }))
+      );
+    }
+
+    // Send admin notification email (non-blocking)
+    sendAdminNewOrderEmail({
+      orderNumber: existingOrder.orderNumber,
+      customerName: paidUser?.fullName || 'Customer',
+      customerEmail: paidUser?.email || '',
+      customerPhone: paidUser?.phone || paidAddr?.phone || '',
+      total: Number(existingOrder.total),
+      paymentMethod: 'RAZORPAY',
+      paymentStatus: 'PAID',
+      items: order.items.map((i: any) => ({ name: i.productName, quantity: i.quantity, price: Number(i.subtotal) })),
+      shippingAddress: paidAddr ? `${paidAddr.fullName}, ${paidAddr.addressLine1}${paidAddr.addressLine2 ? ', ' + paidAddr.addressLine2 : ''}, ${paidAddr.city}, ${paidAddr.state} - ${paidAddr.pinCode}` : 'N/A',
+      isGuest: false,
+    }).catch(err => logger.error('Admin order email failed:', err));
 
     res.json({
       success: true,
@@ -778,14 +826,31 @@ export async function createGuestOrder(
       await prisma.order.update({ where: { id: order.id }, data: { razorpayOrderId: razorpayOrder.id } });
     }
 
-    // Non-blocking confirmation email
-    sendOrderConfirmationEmail(
-      contact.email,
-      contact.name,
-      orderNumber,
-      total,
-      orderItems.map((i) => ({ name: i.productName, quantity: i.quantity, price: i.subtotal }))
-    );
+    // Non-blocking emails — only for COD; Razorpay emails sent after payment verification
+    if (paymentMethod === 'COD') {
+      sendOrderConfirmationEmail(
+        contact.email,
+        contact.name,
+        orderNumber,
+        total,
+        orderItems.map((i) => ({ name: i.productName, quantity: i.quantity, price: i.subtotal }))
+      );
+
+      // Admin notification email (non-blocking)
+      const guestAddr = `${contact.name}, ${address.addressLine1}${address.addressLine2 ? ', ' + address.addressLine2 : ''}, ${address.city}, ${address.state} - ${address.pincode}`;
+      sendAdminNewOrderEmail({
+        orderNumber,
+        customerName: contact.name,
+        customerEmail: contact.email,
+        customerPhone: contact.phone,
+        total,
+        paymentMethod,
+        paymentStatus: 'PENDING',
+        items: orderItems.map((i: any) => ({ name: i.productName, quantity: i.quantity, price: i.subtotal })),
+        shippingAddress: guestAddr,
+        isGuest: true,
+      }).catch(err => logger.error('Admin order email failed:', err));
+    }
 
     res.status(201).json({
       success: true,
@@ -869,6 +934,32 @@ export async function verifyGuestPayment(
 
       return updatedOrder;
     });
+
+    // Send customer confirmation email (non-blocking)
+    if (existingOrder.guestEmail) {
+      sendOrderConfirmationEmail(
+        existingOrder.guestEmail,
+        existingOrder.guestName || 'Customer',
+        existingOrder.orderNumber,
+        Number(existingOrder.total),
+        order.items.map((i: any) => ({ name: i.productName, quantity: i.quantity, price: Number(i.subtotal) }))
+      );
+    }
+
+    // Admin notification for guest payment confirmed
+    const gvAddr = `${existingOrder.guestName || 'Guest'}, ${existingOrder.guestAddressLine1 || ''}${existingOrder.guestAddressLine2 ? ', ' + existingOrder.guestAddressLine2 : ''}, ${existingOrder.guestCity || ''}, ${existingOrder.guestState || ''} - ${existingOrder.guestPincode || ''}`;
+    sendAdminNewOrderEmail({
+      orderNumber: existingOrder.orderNumber,
+      customerName: existingOrder.guestName || 'Guest',
+      customerEmail: existingOrder.guestEmail || '',
+      customerPhone: existingOrder.guestPhone || '',
+      total: Number(existingOrder.total),
+      paymentMethod: 'RAZORPAY',
+      paymentStatus: 'PAID',
+      items: order.items.map((i: any) => ({ name: i.productName, quantity: i.quantity, price: Number(i.subtotal) })),
+      shippingAddress: gvAddr,
+      isGuest: true,
+    }).catch(err => logger.error('Admin order email failed:', err));
 
     res.json({ success: true, data: order, message: 'Payment verified successfully' });
   } catch (error) {
@@ -1290,13 +1381,30 @@ export async function verify1CCPayment(
     const email = customerInfo?.email || (existingOrder.userId
       ? (await prisma.user.findUnique({ where: { id: existingOrder.userId } }))?.email
       : null);
+    const custName = customerInfo?.name || 'Customer';
     if (email) {
-      const name = customerInfo?.name || 'Customer';
       sendOrderConfirmationEmail(
-        email, name, existingOrder.orderNumber, Number(existingOrder.total),
+        email, custName, existingOrder.orderNumber, Number(existingOrder.total),
         orderItems_for_email(order.items)
       );
     }
+
+    // Admin notification for 1CC payment
+    const ccAddr = order.guestAddressLine1
+      ? `${order.guestName || custName}, ${order.guestAddressLine1}${order.guestAddressLine2 ? ', ' + order.guestAddressLine2 : ''}, ${order.guestCity || ''}, ${order.guestState || ''} - ${order.guestPincode || ''}`
+      : 'Address from Razorpay 1CC';
+    sendAdminNewOrderEmail({
+      orderNumber: existingOrder.orderNumber,
+      customerName: custName,
+      customerEmail: email || '',
+      customerPhone: customerInfo?.phone || order.guestPhone || '',
+      total: Number(existingOrder.total),
+      paymentMethod: 'RAZORPAY',
+      paymentStatus: 'PAID',
+      items: orderItems_for_email(order.items),
+      shippingAddress: ccAddr,
+      isGuest: !existingOrder.userId,
+    }).catch(err => logger.error('Admin order email failed:', err));
 
     res.json({ success: true, data: order, message: 'Payment verified successfully' });
   } catch (error) {
@@ -1390,12 +1498,30 @@ export async function verifyGuest1CCPayment(
 
     // Send confirmation email
     const email = guestFields.guestEmail || customerInfo?.email;
+    const gCustName = guestFields.guestName || customerInfo?.name || 'Guest';
     if (email) {
       sendOrderConfirmationEmail(
-        email, guestFields.guestName || 'Customer', existingOrder.orderNumber,
+        email, gCustName, existingOrder.orderNumber,
         Number(existingOrder.total), orderItems_for_email(order.items)
       );
     }
+
+    // Admin notification for guest 1CC payment
+    const g1ccAddr = guestFields.guestAddressLine1
+      ? `${gCustName}, ${guestFields.guestAddressLine1}${guestFields.guestAddressLine2 ? ', ' + guestFields.guestAddressLine2 : ''}, ${guestFields.guestCity || ''}, ${guestFields.guestState || ''} - ${guestFields.guestPincode || ''}`
+      : 'Address from Razorpay 1CC';
+    sendAdminNewOrderEmail({
+      orderNumber: existingOrder.orderNumber,
+      customerName: gCustName,
+      customerEmail: email || '',
+      customerPhone: guestFields.guestPhone || customerInfo?.phone || '',
+      total: Number(existingOrder.total),
+      paymentMethod: 'RAZORPAY',
+      paymentStatus: 'PAID',
+      items: orderItems_for_email(order.items),
+      shippingAddress: g1ccAddr,
+      isGuest: true,
+    }).catch(err => logger.error('Admin order email failed:', err));
 
     res.json({ success: true, data: order, message: 'Payment verified successfully' });
   } catch (error) {
