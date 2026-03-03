@@ -15,6 +15,20 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#x27;');
 }
 
+/** Wrap email body in a proper HTML document with UTF-8 charset */
+function wrapHtml(body: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin: 0; padding: 0;">
+  ${body}
+</body>
+</html>`;
+}
+
 /**
  * POST /api/contact
  * Handle contact form submissions
@@ -31,13 +45,12 @@ export async function submitContactForm(
     const safeSubject = escapeHtml(String(subject));
     const safeMessage = escapeHtml(String(message));
 
-    // Try to send email notification to admin
     if (process.env.BREVO_API_KEY) {
       await sendBrevoEmail({
         to: ADMIN_EMAIL,
         subject: `[Contact Form] ${safeSubject}`,
         senderName: `${SITE_NAME} Contact`,
-        htmlContent: `
+        htmlContent: wrapHtml(`
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #FF6B35;">New Contact Form Submission</h2>
             <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
@@ -50,7 +63,7 @@ export async function submitContactForm(
               <p style="margin: 0; color: #555; line-height: 1.6;">${safeMessage}</p>
             </div>
           </div>
-        `,
+        `),
       });
       logger.info(`Contact form submitted by ${safeEmail}: ${safeSubject}`);
     } else {
@@ -64,7 +77,6 @@ export async function submitContactForm(
     });
   } catch (error) {
     logger.error('Contact form email failed:', error);
-    // Still return success â€” don't expose email failures to user
     res.json({
       success: true,
       data: null,
@@ -75,7 +87,7 @@ export async function submitContactForm(
 
 /**
  * POST /api/contact/bulk-inquiry
- * Handle bulk / wholesale order inquiries â€” sends email notification to admin
+ * Handle bulk / wholesale order inquiries
  */
 export async function submitBulkInquiry(
   req: Request,
@@ -91,75 +103,74 @@ export async function submitBulkInquiry(
     const safeName = escapeHtml(String(name));
     const safeEmail = escapeHtml(String(email));
     const safePhone = escapeHtml(String(phone));
-    const safeBusiness = businessName ? escapeHtml(String(businessName)) : 'â€”';
+    const safeBusiness = businessName ? escapeHtml(String(businessName)) : '&#8212;';
     const safeProduct = escapeHtml(String(productName));
-    const safeMessage = message ? escapeHtml(String(message)) : 'â€”';
+    const safeMessage = message ? escapeHtml(String(message)) : '';
     const safeQty = Number(quantity) || 0;
     const safeUrl = escapeHtml(String(productUrl || ''));
 
-    // Send email to admin
     if (process.env.BREVO_API_KEY) {
       await sendBrevoEmail({
         to: ADMIN_EMAIL,
-        subject: `ðŸ“¦ Bulk Order: ${safeProduct} â€” ${safeQty} units by ${safeName}`,
-        htmlContent: `
+        subject: `Bulk Order: ${safeProduct} - ${safeQty} units by ${safeName}`,
+        htmlContent: wrapHtml(`
           <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.08);">
             <div style="background: linear-gradient(135deg, #FF6B35, #EA580C); padding: 28px 24px;">
-              <h2 style="color: #fff; margin: 0; font-size: 20px;">ðŸ“¦ New Bulk Order Inquiry</h2>
+              <h2 style="color: #fff; margin: 0; font-size: 20px;">New Bulk Order Inquiry</h2>
               <p style="color: rgba(255,255,255,0.85); margin: 8px 0 0; font-size: 14px;">Someone is interested in ordering in bulk!</p>
             </div>
 
             <div style="padding: 24px;">
-              <h3 style="color: #1f2937; margin: 0 0 20px; font-size: 17px;">ðŸï¸ Product: ${safeProduct}</h3>
+              <h3 style="color: #1f2937; margin: 0 0 20px; font-size: 17px;">Product: ${safeProduct}</h3>
 
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6; width: 140px;">ðŸ‘¤ Customer</td>
+                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6; width: 140px;">Customer</td>
                   <td style="padding: 12px 8px; border-bottom: 1px solid #f3f4f6; color: #1f2937;">${safeName}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6;">ðŸ“§ Email</td>
+                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6;">Email</td>
                   <td style="padding: 12px 8px; border-bottom: 1px solid #f3f4f6;"><a href="mailto:${safeEmail}" style="color: #FF6B35;">${safeEmail}</a></td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6;">ðŸ“± Phone</td>
+                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6;">Phone</td>
                   <td style="padding: 12px 8px; border-bottom: 1px solid #f3f4f6;"><a href="tel:+91${safePhone}" style="color: #FF6B35;">+91 ${safePhone}</a></td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6;">ðŸ¢ Business</td>
+                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6;">Business</td>
                   <td style="padding: 12px 8px; border-bottom: 1px solid #f3f4f6; color: #1f2937;">${safeBusiness}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6;">ðŸ“¦ Quantity</td>
+                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6;">Quantity</td>
                   <td style="padding: 12px 8px; border-bottom: 1px solid #f3f4f6;"><strong style="color: #FF6B35; font-size: 20px;">${safeQty} units</strong></td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6;">ðŸ”— Product</td>
+                  <td style="padding: 12px 8px; font-weight: 600; color: #666; border-bottom: 1px solid #f3f4f6;">Product Link</td>
                   <td style="padding: 12px 8px; border-bottom: 1px solid #f3f4f6;"><a href="${safeUrl}" style="color: #FF6B35; word-break: break-all;">${safeUrl}</a></td>
                 </tr>
               </table>
 
-              ${safeMessage !== 'â€”' ? `
+              ${safeMessage ? `
               <div style="background: #f9fafb; padding: 16px; border-radius: 6px; margin-top: 20px;">
-                <h4 style="margin: 0 0 8px; color: #374151;">ðŸ’¬ Additional Details:</h4>
+                <h4 style="margin: 0 0 8px; color: #374151;">Additional Details:</h4>
                 <p style="margin: 0; color: #555; line-height: 1.6;">${safeMessage}</p>
               </div>` : ''}
 
               <div style="margin-top: 24px; text-align: center;">
-                <a href="tel:+91${safePhone}" style="display: inline-block; background: #FF6B35; color: #fff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 0 6px 8px;">ðŸ“ž Call Customer</a>
-                <a href="mailto:${safeEmail}" style="display: inline-block; background: #1f2937; color: #fff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 0 6px 8px;">ðŸ“§ Reply via Email</a>
+                <a href="tel:+91${safePhone}" style="display: inline-block; background: #FF6B35; color: #fff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 0 6px 8px;">Call Customer</a>
+                <a href="mailto:${safeEmail}" style="display: inline-block; background: #1f2937; color: #fff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 0 6px 8px;">Reply via Email</a>
               </div>
             </div>
 
             <div style="padding: 16px 24px; text-align: center; border-top: 1px solid #e5e7eb; background: #f9fafb;">
-              <p style="color: #9ca3af; font-size: 12px; margin: 0;">ðŸï¸ ${SITE_NAME} â€” Bulk Order Notification</p>
+              <p style="color: #9ca3af; font-size: 12px; margin: 0;">${SITE_NAME} - Bulk Order Notification</p>
             </div>
           </div>
-        `,
+        `),
       });
-      logger.info(`Bulk inquiry email sent to admin: ${safeProduct} Ã— ${safeQty} by ${safeName} (${safeEmail})`);
+      logger.info(`Bulk inquiry email sent to admin: ${safeProduct} x ${safeQty} by ${safeName} (${safeEmail})`);
     } else {
-      logger.warn(`Bulk inquiry received but email not configured: ${safeProduct} Ã— ${safeQty} by ${safeEmail}`);
+      logger.warn(`Bulk inquiry received but email not configured: ${safeProduct} x ${safeQty} by ${safeEmail}`);
     }
 
     res.json({
