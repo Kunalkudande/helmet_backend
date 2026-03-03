@@ -1,29 +1,26 @@
-import { createEmailTransporter } from '../config/email';
+import { sendBrevoEmail } from '../config/email';
 import { logger } from '../utils/logger';
 import { EmailOptions } from '../types';
 
-const FROM = process.env.EMAIL_FROM || 'bikersbrain.official@gmail.com';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || process.env.EMAIL_FROM || 'bikersbrain.official@gmail.com';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const SITE_NAME = 'Bikers Brain';
 
 /**
- * Send an email using Nodemailer
+ * Send an email via Brevo HTTP API
  */
 async function sendEmail(options: EmailOptions): Promise<void> {
   try {
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    if (!process.env.BREVO_API_KEY) {
       logger.warn('Email not configured — skipping email send');
       logger.debug(`Would have sent email to ${options.to}: ${options.subject}`);
       return;
     }
 
-    const transporter = createEmailTransporter();
-    await transporter.sendMail({
-      from: `"${SITE_NAME}" <${FROM}>`,
+    await sendBrevoEmail({
       to: options.to,
       subject: options.subject,
-      html: options.html,
+      htmlContent: options.html,
     });
 
     logger.info(`Email sent to ${options.to}: ${options.subject}`);
