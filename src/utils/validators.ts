@@ -51,14 +51,7 @@ export const changePasswordSchema = z.object({
 export const createProductSchema = z.object({
   name: z.string().min(3, 'Product name must be at least 3 characters').max(200),
   brand: z.string().min(1, 'Brand is required'),
-  category: z.enum([
-    // Helmets
-    'FULL_FACE', 'HALF_FACE', 'OPEN_FACE', 'MODULAR', 'OFF_ROAD', 'KIDS', 'LADIES',
-    // Riding Gear
-    'JACKETS', 'GLOVES', 'BOOTS', 'RIDING_PANTS',
-    // Accessories & More
-    'ACCESSORIES', 'PARTS', 'LUGGAGE', 'ELECTRONICS',
-  ]),
+  category: z.string().min(1, 'Category is required').toUpperCase(),
   description: z.string().min(20, 'Description must be at least 20 characters'),
   price: z.number().positive('Price must be greater than 0'),
   discountPrice: z.number().positive('Discount price must be greater than 0').optional().nullable(),

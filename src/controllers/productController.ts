@@ -355,6 +355,18 @@ export async function createProduct(
       variants,
     } = req.body;
 
+    // Validate category exists in ProductCategory table
+    const validCategory = await prisma.productCategory.findUnique({ where: { value: category } });
+    if (!validCategory) {
+      res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
+        details: [`category: Invalid category "${category}". Please select a valid category from the list.`],
+      });
+      return;
+    }
+
     let slug = generateSlug(name);
 
     // Ensure unique slug
@@ -423,6 +435,20 @@ export async function updateProduct(
     const existing = await prisma.product.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError('Product');
+    }
+
+    // Validate category if being changed
+    if (updateData.category) {
+      const validCategory = await prisma.productCategory.findUnique({ where: { value: updateData.category } });
+      if (!validCategory) {
+        res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          code: 'VALIDATION_ERROR',
+          details: [`category: Invalid category "${updateData.category}". Please select a valid category from the list.`],
+        });
+        return;
+      }
     }
 
     // If name changed, update slug
