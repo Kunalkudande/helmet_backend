@@ -2,6 +2,96 @@ import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest } from '../types';
 
+interface GeoLookup {
+  country: string | null;
+  countryCode: string | null;
+  region: string | null;
+  city: string | null;
+  timezone: string | null;
+  isp: string | null;
+  isProxy: boolean | null;
+  isHosting: boolean | null;
+}
+
+const GEO_CACHE_TTL_MS = 1000 * 60 * 60 * 6;
+const geoCache = new Map<string, { data: GeoLookup | null; expiresAt: number }>();
+
+function normalizeIp(raw: string): string {
+  const first = raw.split(',')[0]?.trim() || raw;
+  if (first.startsWith('::ffff:')) return first.slice(7);
+  return first;
+}
+
+function isPrivateOrLocalIp(ip: string): boolean {
+  if (!ip) return true;
+  if (ip === '::1' || ip === '127.0.0.1' || ip === 'localhost') return true;
+  if (ip.startsWith('10.') || ip.startsWith('192.168.')) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) return true;
+  if (ip.startsWith('fe80:') || ip.startsWith('fc') || ip.startsWith('fd')) return true;
+  return false;
+}
+
+async function lookupGeoFromIp(ip: string): Promise<GeoLookup | null> {
+  if (!ip || ip === 'unknown' || isPrivateOrLocalIp(ip)) {
+    return null;
+  }
+
+  const cached = geoCache.get(ip);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1800);
+
+    const response = await fetch(
+      `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,countryCode,regionName,city,timezone,isp,proxy,hosting`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      geoCache.set(ip, { data: null, expiresAt: Date.now() + GEO_CACHE_TTL_MS });
+      return null;
+    }
+
+    const payload = (await response.json()) as {
+      status?: string;
+      country?: string;
+      countryCode?: string;
+      regionName?: string;
+      city?: string;
+      timezone?: string;
+      isp?: string;
+      proxy?: boolean;
+      hosting?: boolean;
+    };
+
+    if (payload.status !== 'success') {
+      geoCache.set(ip, { data: null, expiresAt: Date.now() + GEO_CACHE_TTL_MS });
+      return null;
+    }
+
+    const result: GeoLookup = {
+      country: payload.country || null,
+      countryCode: payload.countryCode || null,
+      region: payload.regionName || null,
+      city: payload.city || null,
+      timezone: payload.timezone || null,
+      isp: payload.isp || null,
+      isProxy: typeof payload.proxy === 'boolean' ? payload.proxy : null,
+      isHosting: typeof payload.hosting === 'boolean' ? payload.hosting : null,
+    };
+
+    geoCache.set(ip, { data: result, expiresAt: Date.now() + GEO_CACHE_TTL_MS });
+    return result;
+  } catch {
+    geoCache.set(ip, { data: null, expiresAt: Date.now() + GEO_CACHE_TTL_MS });
+    return null;
+  }
+}
+
 /**
  * Extract device, browser, and OS from a user-agent string.
  */
@@ -64,13 +154,13 @@ export async function trackVisit(
       return;
     }
 
-    const ip =
-      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-      req.socket.remoteAddress ||
-      'unknown';
+    const forwardedIp = req.headers['x-forwarded-for'] as string | undefined;
+    const rawIp = forwardedIp || req.ip || req.socket.remoteAddress || 'unknown';
+    const ip = normalizeIp(rawIp);
 
     const userAgent = (req.headers['user-agent'] || '').slice(0, 500);
     const { device, browser, os } = parseUserAgent(userAgent);
+    const geo = await lookupGeoFromIp(ip);
 
     await prisma.visitor.create({
       data: {
@@ -81,6 +171,14 @@ export async function trackVisit(
         device,
         browser,
         os,
+        country: geo?.country || null,
+        countryCode: geo?.countryCode || null,
+        region: geo?.region || null,
+        city: geo?.city || null,
+        timezone: geo?.timezone || null,
+        isp: geo?.isp || null,
+        isProxy: geo?.isProxy ?? null,
+        isHosting: geo?.isHosting ?? null,
         sessionId: safeSessionId,
       },
     });
@@ -120,6 +218,8 @@ export async function getVisitorStats(
       topPages,
       deviceBreakdown,
       browserBreakdown,
+      topCountries,
+      topCities,
       recentVisitors,
       dailyVisits,
     ] = await Promise.all([
@@ -166,6 +266,30 @@ export async function getVisitorStats(
         orderBy: { _count: { browser: 'desc' } },
       }),
 
+      // Top countries
+      prisma.visitor.groupBy({
+        by: ['country', 'countryCode'],
+        where: {
+          createdAt: { gte: since },
+          country: { not: null },
+        },
+        _count: { country: true },
+        orderBy: { _count: { country: 'desc' } },
+        take: 10,
+      }),
+
+      // Top cities
+      prisma.visitor.groupBy({
+        by: ['city', 'country'],
+        where: {
+          createdAt: { gte: since },
+          city: { not: null },
+        },
+        _count: { city: true },
+        orderBy: { _count: { city: 'desc' } },
+        take: 10,
+      }),
+
       // Recent 50 visitors
       prisma.visitor.findMany({
         where: { createdAt: { gte: since } },
@@ -177,6 +301,15 @@ export async function getVisitorStats(
           device: true,
           browser: true,
           os: true,
+          country: true,
+          countryCode: true,
+          region: true,
+          city: true,
+          timezone: true,
+          isp: true,
+          isProxy: true,
+          isHosting: true,
+          userAgent: true,
           referrer: true,
           createdAt: true,
         },
@@ -209,6 +342,16 @@ export async function getVisitorStats(
         topPages: topPages.map((p: any) => ({ page: p.page, count: p._count.page })),
         devices: deviceBreakdown.map((d: any) => ({ device: d.device || 'Unknown', count: d._count.device })),
         browsers: browserBreakdown.map((b: any) => ({ browser: b.browser || 'Unknown', count: b._count.browser })),
+        topCountries: topCountries.map((c: any) => ({
+          country: c.country || 'Unknown',
+          countryCode: c.countryCode || null,
+          count: c._count.country,
+        })),
+        topCities: topCities.map((c: any) => ({
+          city: c.city || 'Unknown',
+          country: c.country || 'Unknown',
+          count: c._count.city,
+        })),
         recentVisitors,
         dailyVisits,
         period: `${daysNum} days`,

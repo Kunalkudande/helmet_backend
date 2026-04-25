@@ -317,11 +317,21 @@ model Visitor {
   device     String?                    // mobile, tablet, desktop
   browser    String?
   os         String?
+  country    String?
+  countryCode String?
+  region     String?
+  city       String?
+  timezone   String?
+  isp        String?
+  isProxy    Boolean?
+  isHosting  Boolean?
   sessionId  String   @unique           // one row per session
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
   @@index([ip])
+  @@index([country])
+  @@index([city])
 }
 
 model BlogPost {

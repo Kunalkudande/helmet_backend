@@ -101,7 +101,7 @@ export async function getProducts(
         take: limitNum,
         orderBy: { [sortField]: order },
         include: {
-          images: { orderBy: { displayOrder: 'asc' }, take: 2 },
+          images: { orderBy: [{ isPrimary: 'desc' }, { displayOrder: 'asc' }], take: 2 },
           variants: { select: { id: true, size: true, color: true, stock: true, additionalPrice: true } },
         },
       }),
@@ -129,6 +129,127 @@ export async function getProducts(
 }
 
 /**
+ * GET /api/products/admin/list (Admin)
+ * List products for admin including inactive products by default
+ */
+export async function getAdminProducts(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const {
+      page = '1',
+      limit = '15',
+      category,
+      brand,
+      minPrice,
+      maxPrice,
+      search,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+      inStock,
+      isActive,
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page as string, 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string, 10)));
+    const skip = (pageNum - 1) * limitNum;
+
+    const where: Record<string, unknown> = {};
+
+    if (category) where.category = category;
+    if (brand) where.brand = { contains: brand as string, mode: 'insensitive' };
+    if (inStock === 'true') where.stock = { gt: 0 };
+
+    if (isActive === 'true' || isActive === 'false') {
+      where.isActive = isActive === 'true';
+    }
+
+    if (minPrice || maxPrice) {
+      where.price = {};
+      if (minPrice) (where.price as Record<string, unknown>).gte = parseFloat(minPrice as string);
+      if (maxPrice) (where.price as Record<string, unknown>).lte = parseFloat(maxPrice as string);
+    }
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search as string, mode: 'insensitive' } },
+        { brand: { contains: search as string, mode: 'insensitive' } },
+        { description: { contains: search as string, mode: 'insensitive' } },
+        { sku: { contains: search as string, mode: 'insensitive' } },
+      ];
+    }
+
+    const allowedSortFields = ['price', 'createdAt', 'rating', 'name', 'totalReviews', 'stock'];
+    const sortField = allowedSortFields.includes(sortBy as string) ? (sortBy as string) : 'createdAt';
+    const order = sortOrder === 'asc' ? 'asc' : 'desc';
+
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where: where as any,
+        skip,
+        take: limitNum,
+        orderBy: { [sortField]: order },
+        include: {
+          images: {
+            select: { id: true, imageUrl: true, isPrimary: true, displayOrder: true },
+            orderBy: [{ isPrimary: 'desc' }, { displayOrder: 'asc' }],
+          },
+        },
+      }),
+      prisma.product.count({ where: where as any }),
+    ]);
+
+    const totalPages = Math.ceil(total / limitNum);
+    const result: PaginatedResponse<typeof products[0]> = {
+      items: products,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages,
+      hasNext: pageNum < totalPages,
+      hasPrev: pageNum > 1,
+    };
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /api/products/admin/:slug (Admin)
+ * Get a single product by slug including inactive products
+ */
+export async function getAdminProductBySlug(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { slug } = req.params;
+
+    const product = await prisma.product.findUnique({
+      where: { slug },
+      include: {
+        images: { orderBy: [{ isPrimary: 'desc' }, { displayOrder: 'asc' }] },
+        variants: true,
+        specifications: true,
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundError('Product');
+    }
+
+    res.json({ success: true, data: product });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * GET /api/products/:slug
  * Get single product by slug
  */
@@ -147,10 +268,10 @@ export async function getProductBySlug(
       return;
     }
 
-    const product = await prisma.product.findUnique({
-      where: { slug },
+    const product = await prisma.product.findFirst({
+      where: { slug, isActive: true },
       include: {
-        images: { orderBy: { displayOrder: 'asc' } },
+        images: { orderBy: [{ isPrimary: 'desc' }, { displayOrder: 'asc' }] },
         variants: true,
         specifications: true,
         reviews: {
@@ -224,8 +345,8 @@ export async function getRelatedProducts(
   try {
     const { slug } = req.params;
 
-    const product = await prisma.product.findUnique({
-      where: { slug },
+    const product = await prisma.product.findFirst({
+      where: { slug, isActive: true },
       select: { id: true, category: true, brand: true },
     });
 
@@ -625,7 +746,7 @@ export async function addProductImages(
     // Fetch and return all images for this product
     const allImages = await prisma.productImage.findMany({
       where: { productId: id },
-      orderBy: { displayOrder: 'asc' },
+      orderBy: [{ isPrimary: 'desc' }, { displayOrder: 'asc' }],
     });
 
     await deleteCachePattern(`product:${product.slug}`);
@@ -694,7 +815,7 @@ export async function deleteProductImage(
     // Return remaining images
     const remainingImages = await prisma.productImage.findMany({
       where: { productId: id },
-      orderBy: { displayOrder: 'asc' },
+      orderBy: [{ isPrimary: 'desc' }, { displayOrder: 'asc' }],
     });
 
     res.json({
@@ -702,6 +823,85 @@ export async function deleteProductImage(
       data: { images: remainingImages },
       message: 'Image deleted successfully',
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * PUT /api/products/:id/images/reorder (Admin)
+ * Reorder product images and optionally set primary
+ */
+export async function reorderProductImages(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const { id } = req.params;
+    const { orderedImageIds, primaryImageId } = req.body as {
+      orderedImageIds?: string[];
+      primaryImageId?: string;
+    };
+
+    const product = await prisma.product.findUnique({ where: { id } });
+    if (!product) throw new NotFoundError('Product');
+
+    const existingImages = await prisma.productImage.findMany({
+      where: { productId: id },
+      orderBy: { displayOrder: 'asc' },
+      select: { id: true, isPrimary: true },
+    });
+
+    if (existingImages.length === 0) {
+      throw new AppError('No images found for this product', 400);
+    }
+
+    const existingIdSet = new Set(existingImages.map((img) => img.id));
+    const requestedOrder = Array.isArray(orderedImageIds)
+      ? orderedImageIds.filter((imgId, idx, arr) => arr.indexOf(imgId) === idx && existingIdSet.has(imgId))
+      : [];
+
+    const finalOrder = [...requestedOrder];
+    for (const img of existingImages) {
+      if (!finalOrder.includes(img.id)) {
+        finalOrder.push(img.id);
+      }
+    }
+
+    const currentPrimaryId = existingImages.find((img) => img.isPrimary)?.id;
+    const chosenPrimaryId =
+      primaryImageId && existingIdSet.has(primaryImageId)
+        ? primaryImageId
+        : currentPrimaryId || finalOrder[0];
+
+    await prisma.$transaction(async (tx) => {
+      await tx.productImage.updateMany({
+        where: { productId: id },
+        data: { isPrimary: false },
+      });
+
+      for (let idx = 0; idx < finalOrder.length; idx++) {
+        const imgId = finalOrder[idx];
+        await tx.productImage.update({
+          where: { id: imgId },
+          data: {
+            displayOrder: idx,
+            isPrimary: imgId === chosenPrimaryId,
+          },
+        });
+      }
+    });
+
+    const allImages = await prisma.productImage.findMany({
+      where: { productId: id },
+      orderBy: [{ isPrimary: 'desc' }, { displayOrder: 'asc' }],
+    });
+
+    await deleteCachePattern(`product:${product.slug}`);
+    await deleteCachePattern('products:*');
+
+    res.json({ success: true, data: { images: allImages } });
   } catch (error) {
     next(error);
   }
@@ -725,19 +925,35 @@ export async function setPrimaryImage(
     const image = await prisma.productImage.findUnique({ where: { id: imageId } });
     if (!image || image.productId !== id) throw new NotFoundError('Image');
 
-    // Unset all as primary, then set the chosen one
-    await prisma.productImage.updateMany({
+    const allProductImages = await prisma.productImage.findMany({
       where: { productId: id },
-      data: { isPrimary: false },
+      orderBy: { displayOrder: 'asc' },
+      select: { id: true },
     });
-    await prisma.productImage.update({
-      where: { id: imageId },
-      data: { isPrimary: true },
+
+    const reorderedIds = [imageId, ...allProductImages.map((img) => img.id).filter((imgId) => imgId !== imageId)];
+
+    await prisma.$transaction(async (tx) => {
+      await tx.productImage.updateMany({
+        where: { productId: id },
+        data: { isPrimary: false },
+      });
+
+      for (let idx = 0; idx < reorderedIds.length; idx++) {
+        const imgId = reorderedIds[idx];
+        await tx.productImage.update({
+          where: { id: imgId },
+          data: {
+            isPrimary: imgId === imageId,
+            displayOrder: idx,
+          },
+        });
+      }
     });
 
     const allImages = await prisma.productImage.findMany({
       where: { productId: id },
-      orderBy: { displayOrder: 'asc' },
+      orderBy: [{ isPrimary: 'desc' }, { displayOrder: 'asc' }],
     });
 
     await deleteCachePattern(`product:${product.slug}`);

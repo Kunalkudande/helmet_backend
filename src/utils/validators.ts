@@ -56,6 +56,7 @@ export const createProductSchema = z.object({
   price: z.number().positive('Price must be greater than 0'),
   discountPrice: z.number().positive('Discount price must be greater than 0').optional().nullable(),
   stock: z.number().int().min(0, 'Stock cannot be negative'),
+  isActive: z.boolean().optional(),
   sku: z.string().min(3, 'SKU must be at least 3 characters'),
   specifications: z
     .object({

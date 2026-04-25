@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import {
   getProducts,
+  getAdminProducts,
   getProductBySlug,
+  getAdminProductBySlug,
   getRelatedProducts,
   searchAutocomplete,
   getFeaturedProducts,
@@ -11,6 +13,7 @@ import {
   deleteProduct,
   addProductImages,
   deleteProductImage,
+  reorderProductImages,
   setPrimaryImage,
   getBrands,
   getPublicCategories,
@@ -32,6 +35,11 @@ router.get('/category-counts', getCategoryCounts);
 router.get('/brands', getBrands);
 router.get('/categories', getPublicCategories);
 router.get('/search/autocomplete', searchAutocomplete);
+
+// Admin product reads
+router.get('/admin/list', authenticate, adminOnly, getAdminProducts);
+router.get('/admin/:slug', authenticate, adminOnly, getAdminProductBySlug);
+
 router.get('/:slug', getProductBySlug);
 router.get('/:slug/related', getRelatedProducts);
 
@@ -45,6 +53,7 @@ router.put('/:id', authenticate, adminOnly, validateBody(updateProductSchema), u
 router.delete('/:id', authenticate, adminOnly, deleteProduct);
 router.post('/:id/images', authenticate, adminOnly, uploadMultiple, addProductImages);
 router.delete('/:id/images/:imageId', authenticate, adminOnly, deleteProductImage);
+router.put('/:id/images/reorder', authenticate, adminOnly, reorderProductImages);
 router.put('/:id/images/:imageId/primary', authenticate, adminOnly, setPrimaryImage);
 
 export default router;
