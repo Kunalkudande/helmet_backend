@@ -125,9 +125,9 @@ function parseUserAgent(ua: string = ''): { device: string; browser: string; os:
 /**
  * POST /api/visitors/track
  *
- * Records one visit per browser session.
- * The frontend generates a sessionId (stored in sessionStorage) and calls this
- * once on initial load. If the sessionId already exists we skip — no duplicates.
+ * Records one page-view event for a browser session.
+ * The frontend keeps a sessionId in sessionStorage and calls this on route changes
+ * so we can see a full page journey for each visitor session.
  */
 export async function trackVisit(
   req: Request,
@@ -147,9 +147,21 @@ export async function trackVisit(
     const safeReferrer = referrer ? String(referrer).slice(0, 1000) : null;
     const safeSessionId = String(sessionId).slice(0, 100);
 
-    // One row per session — skip if already tracked
-    const exists = await prisma.visitor.findUnique({ where: { sessionId: safeSessionId } });
-    if (exists) {
+    // Keep one visitor row per session and append page views for navigation history.
+    const existingVisitor = await prisma.visitor.findUnique({
+      where: { sessionId: safeSessionId },
+      select: { id: true },
+    });
+
+    if (existingVisitor) {
+      await prisma.visitorPageView.create({
+        data: {
+          visitorId: existingVisitor.id,
+          page: safePage,
+          referrer: safeReferrer,
+        },
+      });
+
       res.json({ success: true });
       return;
     }
@@ -180,6 +192,12 @@ export async function trackVisit(
         isProxy: geo?.isProxy ?? null,
         isHosting: geo?.isHosting ?? null,
         sessionId: safeSessionId,
+        pageViews: {
+          create: {
+            page: safePage,
+            referrer: safeReferrer,
+          },
+        },
       },
     });
 
@@ -191,7 +209,7 @@ export async function trackVisit(
 }
 
 /**
- * GET /api/admin/visitors?days=30
+ * GET /api/admin/visitors?days=30&page=1&limit=20
  *
  * Returns simple, actionable analytics for the admin dashboard.
  */
@@ -202,6 +220,8 @@ export async function getVisitorStats(
 ): Promise<void> {
   try {
     const daysNum = Math.min(90, Math.max(1, parseInt(req.query.days as string, 10) || 30));
+    const pageNum = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+    const pageSize = Math.min(100, Math.max(5, parseInt(req.query.limit as string, 10) || 20));
 
     const since = new Date();
     since.setDate(since.getDate() - daysNum);
@@ -220,7 +240,8 @@ export async function getVisitorStats(
       browserBreakdown,
       topCountries,
       topCities,
-      recentVisitors,
+      paginatedVisitors,
+      visitorsTotal,
       dailyVisits,
     ] = await Promise.all([
       // Total sessions in period
@@ -290,12 +311,14 @@ export async function getVisitorStats(
         take: 10,
       }),
 
-      // Recent 50 visitors
+      // Paginated visitors
       prisma.visitor.findMany({
         where: { createdAt: { gte: since } },
         orderBy: { createdAt: 'desc' },
-        take: 50,
+        skip: (pageNum - 1) * pageSize,
+        take: pageSize,
         select: {
+          id: true,
           ip: true,
           page: true,
           device: true,
@@ -312,8 +335,19 @@ export async function getVisitorStats(
           userAgent: true,
           referrer: true,
           createdAt: true,
+          pageViews: {
+            select: {
+              page: true,
+              referrer: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: 'asc' },
+          },
         },
       }),
+
+      // Total rows for pagination
+      prisma.visitor.count({ where: { createdAt: { gte: since } } }),
 
       // Daily visitor counts for chart
       prisma.$queryRaw`
@@ -327,6 +361,8 @@ export async function getVisitorStats(
         ORDER BY DATE("createdAt") ASC
       `,
     ]);
+
+    const totalPages = Math.max(1, Math.ceil(visitorsTotal / pageSize));
 
     res.json({
       success: true,
@@ -352,7 +388,15 @@ export async function getVisitorStats(
           country: c.country || 'Unknown',
           count: c._count.city,
         })),
-        recentVisitors,
+        recentVisitors: paginatedVisitors,
+        visitorsPagination: {
+          page: pageNum,
+          limit: pageSize,
+          total: visitorsTotal,
+          totalPages,
+          hasPrev: pageNum > 1,
+          hasNext: pageNum < totalPages,
+        },
         dailyVisits,
         period: `${daysNum} days`,
       },

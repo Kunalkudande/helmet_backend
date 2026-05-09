@@ -15,6 +15,10 @@ import {
 } from '../services/emailService';
 import { AppError, NotFoundError } from '../middleware/errorHandler';
 
+function generateOtp(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 /**
  * POST /api/auth/register
  * Register a new user account
@@ -280,8 +284,8 @@ export async function forgotPassword(
       return;
     }
 
-    const resetToken = generateRandomToken();
-    const resetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const resetToken = generateOtp();
+    const resetExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     await prisma.user.update({
       where: { id: user.id },
@@ -296,7 +300,7 @@ export async function forgotPassword(
     res.json({
       success: true,
       data: null,
-      message: 'If an account exists with this email, a reset link has been sent.',
+      message: 'If an account exists with this email, an OTP has been sent.',
     });
   } catch (error) {
     next(error);
@@ -305,7 +309,7 @@ export async function forgotPassword(
 
 /**
  * POST /api/auth/reset-password
- * Reset password using token
+ * Reset password using OTP
  */
 export async function resetPassword(
   req: Request,
@@ -323,7 +327,7 @@ export async function resetPassword(
     });
 
     if (!user) {
-      throw new AppError('Invalid or expired reset token', 400);
+      throw new AppError('Invalid or expired OTP', 400);
     }
 
     const hashedPassword = await hashPassword(password);

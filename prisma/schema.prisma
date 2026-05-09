@@ -27,6 +27,7 @@ model User {
   reviews   Review[]
   wishlist  Wishlist[]
   cart      Cart?
+  returnRequests ReturnRequest[]
 }
 
 enum Role {
@@ -205,6 +206,7 @@ model Order {
   address Address?    @relation(fields: [addressId], references: [id])
   items   OrderItem[]
   reviews Review[]
+  returnRequest ReturnRequest?
 }
 
 enum PaymentMethod {
@@ -229,6 +231,20 @@ enum OrderStatus {
   RETURNED
 }
 
+enum ReturnStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+enum RefundStatus {
+  NONE
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model OrderItem {
   id           String  @id @default(uuid())
   orderId      String
@@ -245,6 +261,23 @@ model OrderItem {
   order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product         @relation(fields: [productId], references: [id])
   variant ProductVariant? @relation(fields: [variantId], references: [id])
+}
+
+model ReturnRequest {
+  id           String       @id @default(uuid())
+  orderId      String       @unique
+  userId       String?
+  reason       String
+  description  String?      @db.Text
+  status       ReturnStatus @default(PENDING)
+  refundStatus RefundStatus @default(NONE)
+  refundAmount Decimal?     @db.Decimal(10, 2)
+  adminNotes   String?      @db.Text
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  user  User? @relation(fields: [userId], references: [id])
 }
 
 model Review {
@@ -327,11 +360,25 @@ model Visitor {
   isHosting  Boolean?
   sessionId  String   @unique           // one row per session
   createdAt  DateTime @default(now())
+  pageViews  VisitorPageView[]
 
   @@index([createdAt])
   @@index([ip])
   @@index([country])
   @@index([city])
+}
+
+model VisitorPageView {
+  id        String   @id @default(uuid())
+  visitorId String
+  page      String
+  referrer  String?
+  createdAt DateTime @default(now())
+
+  visitor Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  @@index([visitorId, createdAt])
+  @@index([page])
 }
 
 model BlogPost {

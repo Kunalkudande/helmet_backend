@@ -114,26 +114,31 @@ export async function sendVerificationEmail(
 }
 
 /**
- * Send password reset link
+ * Send password reset OTP
  */
 export async function sendPasswordResetEmail(
   email: string,
   fullName: string,
   token: string
 ): Promise<void> {
-  const resetUrl = `${FRONTEND_URL}/reset-password?token=${token}`;
+  const resetUrl = `${FRONTEND_URL}/forgot-password`;
 
   await sendEmail({
     to: email,
-    subject: `Reset your password - ${SITE_NAME}`,
+    subject: `Your password reset OTP - ${SITE_NAME}`,
     html: emailWrapper(`
       <div style="padding: 32px;">
-        <h2 style="color: #1F2937; margin: 0 0 16px;">Password Reset</h2>
-        <p style="color: #374151; line-height: 1.6;">Hi ${fullName}, we received a request to reset your password. Click the button below to set a new password.</p>
+        <h2 style="color: #1F2937; margin: 0 0 16px;">Password Reset OTP</h2>
+        <p style="color: #374151; line-height: 1.6;">Hi ${fullName}, we received a request to reset your password. Use the OTP below on the password reset page.</p>
+        <div style="background: #FFF7ED; border: 1px solid #FDBA74; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0;">
+          <p style="margin: 0 0 8px; color: #9A3412; font-size: 13px; letter-spacing: .12em; text-transform: uppercase;">One-time password</p>
+          <div style="font-size: 36px; font-weight: 800; letter-spacing: 0.35em; color: #EA580C; font-family: 'Courier New', monospace;">${token}</div>
+          <p style="margin: 12px 0 0; color: #9A3412; font-size: 13px;">This OTP expires in 10 minutes.</p>
+        </div>
         <div style="text-align: center; margin: 32px 0;">
           <a href="${resetUrl}" style="background: #FF6B35; color: #fff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;">Reset Password</a>
         </div>
-        <p style="color: #9CA3AF; font-size: 13px;">This link expires in 1 hour. If you didn't request a password reset, you can safely ignore this email.</p>
+        <p style="color: #9CA3AF; font-size: 13px;">If you didn't request a password reset, you can safely ignore this email.</p>
       </div>
     `),
   });
