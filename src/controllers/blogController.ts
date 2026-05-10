@@ -101,11 +101,44 @@ export async function getAllPosts(
   next: NextFunction
 ): Promise<void> {
   try {
-    const posts = await prisma.blogPost.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
+    const { page = '1', limit = '20', search } = req.query;
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string, 10) || 20));
+    const skip = (pageNum - 1) * limitNum;
 
-    res.json({ success: true, data: posts });
+    const where: Record<string, unknown> = {};
+    if (search) {
+      where.OR = [
+        { title: { contains: search as string, mode: 'insensitive' } },
+        { slug: { contains: search as string, mode: 'insensitive' } },
+        { author: { contains: search as string, mode: 'insensitive' } },
+      ];
+    }
+
+    const [posts, total] = await Promise.all([
+      prisma.blogPost.findMany({
+        where: where as any,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limitNum,
+      }),
+      prisma.blogPost.count({ where: where as any }),
+    ]);
+
+    const totalPages = Math.ceil(total / limitNum);
+
+    res.json({
+      success: true,
+      data: {
+        items: posts,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1,
+      },
+    });
   } catch (error) {
     next(error);
   }

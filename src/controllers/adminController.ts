@@ -418,15 +418,49 @@ export async function createCoupon(
  * List all coupons
  */
 export async function getCoupons(
-  _req: AuthRequest,
+  req: AuthRequest,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   try {
-    const coupons = await prisma.coupon.findMany({
-      orderBy: { createdAt: 'desc' },
+    const { page = '1', limit = '20', search } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string, 10) || 20));
+    const skip = (pageNum - 1) * limitNum;
+
+    const where: Record<string, unknown> = {};
+    if (search) {
+      where.OR = [
+        { code: { contains: search as string, mode: 'insensitive' } },
+        { description: { contains: search as string, mode: 'insensitive' } },
+      ];
+    }
+
+    const [coupons, total] = await Promise.all([
+      prisma.coupon.findMany({
+        where: where as any,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limitNum,
+      }),
+      prisma.coupon.count({ where: where as any }),
+    ]);
+
+    const totalPages = Math.ceil(total / limitNum);
+
+    res.json({
+      success: true,
+      data: {
+        items: coupons,
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages,
+        hasNext: pageNum < totalPages,
+        hasPrev: pageNum > 1,
+      },
     });
-    res.json({ success: true, data: coupons });
   } catch (error) {
     next(error);
   }
