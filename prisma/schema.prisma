@@ -112,6 +112,7 @@ enum Size {
 }
 
 model ProductSpecification {
+  details        Json?
   id             String   @id @default(uuid())
   productId      String   @unique
   weight         String

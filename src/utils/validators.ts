@@ -48,6 +48,8 @@ export const changePasswordSchema = z.object({
 
 /* ────────────────────────────────────── PRODUCT ──── */
 
+const productSkuSchema = z.string().trim().min(3, 'SKU must be at least 3 characters');
+
 export const createProductSchema = z.object({
   name: z.string().min(3, 'Product name must be at least 3 characters').max(200),
   brand: z.string().min(1, 'Brand is required'),
@@ -57,15 +59,19 @@ export const createProductSchema = z.object({
   discountPrice: z.number().positive('Discount price must be greater than 0').optional().nullable(),
   stock: z.number().int().min(0, 'Stock cannot be negative'),
   isActive: z.boolean().optional(),
-  sku: z.string().min(3, 'SKU must be at least 3 characters'),
+  sku: z.preprocess(value => typeof value === 'string' && !value.trim() ? undefined : value, productSkuSchema.optional()),
   specifications: z
     .object({
-      weight: z.string().min(1, 'Weight is required'),
-      material: z.string().min(1, 'Material is required'),
-      certifications: z.array(z.string()),
-      visorType: z.string().min(1, 'Visor type is required'),
-      ventilation: z.boolean(),
-      features: z.array(z.string()),
+      details: z.array(z.object({
+        label: z.string().trim().min(1).max(100),
+        value: z.string().trim().min(1).max(1000),
+      })).max(50).refine(rows => new Set(rows.map(row => row.label.toLowerCase())).size === rows.length, 'Detail names must be unique').optional(),
+      weight: z.string().min(1, 'Weight is required').default('N/A'),
+      material: z.string().min(1, 'Material is required').default('N/A'),
+      certifications: z.array(z.string()).default([]),
+      visorType: z.string().min(1, 'Visor type is required').default('N/A'),
+      ventilation: z.boolean().default(false),
+      features: z.array(z.string()).default([]),
     })
     .optional(),
   variants: z
@@ -80,7 +86,7 @@ export const createProductSchema = z.object({
     .optional(),
 });
 
-export const updateProductSchema = createProductSchema.partial();
+export const updateProductSchema = createProductSchema.partial().extend({ sku: productSkuSchema.optional() });
 
 /* ────────────────────────────────────── ADDRESS ──── */
 

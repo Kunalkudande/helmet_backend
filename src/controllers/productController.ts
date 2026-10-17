@@ -1,3 +1,4 @@
+import { resolveProductSku } from '../utils/productSku';
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest, PaginatedResponse } from '../types';
@@ -457,6 +458,14 @@ export async function getFeaturedProducts(
  * POST /api/products (Admin)
  * Create a new product
  */
+// Keep the existing certification filter working for structured extra details.
+function syncDetailCertifications(specifications: { details?: { label: string; value: string }[]; certifications?: string[] } | undefined): void {
+  if (!Array.isArray(specifications?.details)) return;
+  specifications.certifications = specifications.details
+    .filter((detail: { label: string }) => /certifications|standards/i.test(detail.label))
+    .flatMap((detail: { value: string }) => detail.value.split(/[,;\n]/).map(value => value.trim()).filter(Boolean));
+}
+
 export async function createProduct(
   req: AuthRequest,
   res: Response,
@@ -475,6 +484,8 @@ export async function createProduct(
       specifications,
       variants,
     } = req.body;
+
+    syncDetailCertifications(specifications);
 
     // Validate category exists in ProductCategory table
     const validCategory = await prisma.productCategory.findUnique({ where: { value: category } });
@@ -496,6 +507,8 @@ export async function createProduct(
       slug = `${slug}-${Date.now().toString(36)}`;
     }
 
+    const productSku = resolveProductSku(sku, name, brand);
+
     const product = await prisma.product.create({
       data: {
         name,
@@ -506,7 +519,7 @@ export async function createProduct(
         price,
         discountPrice: discountPrice || null,
         stock,
-        sku,
+        sku: productSku,
         specifications: specifications
           ? { create: specifications }
           : undefined,
@@ -514,7 +527,7 @@ export async function createProduct(
           ? {
               create: variants.map((v: { size: string; color: string; stock: number; additionalPrice?: number }, idx: number) => ({
                 ...v,
-                sku: `${sku}-${v.size}-${v.color.replace(/\s/g, '')}-${idx}`.toUpperCase(),
+                sku: `${productSku}-${v.size}-${v.color.replace(/\s/g, '')}-${idx}`.toUpperCase(),
                 additionalPrice: v.additionalPrice || 0,
               })),
             }
@@ -582,6 +595,8 @@ export async function updateProduct(
         updateData.slug = `${updateData.slug}-${Date.now().toString(36)}`;
       }
     }
+
+    syncDetailCertifications(updateData.specifications);
 
     // Handle specifications update
     if (updateData.specifications) {
