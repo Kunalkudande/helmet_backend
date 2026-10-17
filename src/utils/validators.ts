@@ -107,6 +107,7 @@ export const addressSchema = z.object({
 /* ──────────────────────────────────────── ORDER ──── */
 
 export const createOrderSchema = z.object({
+  analyticsSessionId: z.string().uuid().optional(),
   addressId: z.string().uuid('Invalid address ID'),
   paymentMethod: z.enum(['RAZORPAY', 'COD']),
   couponCode: z.string().optional(),
@@ -222,6 +223,7 @@ const sanitizedString = (min: number, max: number, label: string) =>
     .refine((v) => !/<script|javascript:|on\w+=/i.test(v), { message: `${label} contains invalid content` });
 
 export const guestOrderSchema = z.object({
+  analyticsSessionId: z.string().uuid().optional(),
   contact: z.object({
     name: sanitizedString(2, 100, 'Name'),
     email: z.string().email('Enter a valid email address').max(150),

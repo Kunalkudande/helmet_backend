@@ -1,3 +1,4 @@
+import { analyticsSessionId } from '../utils/visitorAnalytics';
 import { Request, Response, NextFunction } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '../config/database';
@@ -181,6 +182,7 @@ export async function createOrder(
       const newOrder = await tx.order.create({
         data: {
           orderNumber,
+          analyticsSessionId: analyticsSessionId(req.body.analyticsSessionId),
           userId: req.user!.userId,
           addressId,
           subtotal,
@@ -779,6 +781,7 @@ export async function createGuestOrder(
     const order = await prisma.order.create({
       data: {
         orderNumber,
+        analyticsSessionId: analyticsSessionId(req.body.analyticsSessionId),
         userId: null,
         addressId: null,
         guestName: contact.name,
@@ -1061,6 +1064,7 @@ export async function createRazorpayCheckout(
     const order = await prisma.order.create({
       data: {
         orderNumber,
+        analyticsSessionId: analyticsSessionId(req.body.analyticsSessionId),
         userId: req.user.userId,
         addressId: null,
         subtotal,
@@ -1209,6 +1213,7 @@ export async function createGuestRazorpayCheckout(
     const order = await prisma.order.create({
       data: {
         orderNumber,
+        analyticsSessionId: analyticsSessionId(req.body.analyticsSessionId),
         userId: null,
         addressId: null,
         subtotal,

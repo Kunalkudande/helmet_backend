@@ -19,10 +19,10 @@ import {
   updateSettings,
   getPublicSettings,
 } from '../controllers/adminController';
-import { getVisitorStats } from '../controllers/visitorController';
+import { getVisitorStats, getVisitorJourney } from '../controllers/visitorInsightsController';
 import { authenticate } from '../middleware/auth';
 import { adminOnly } from '../middleware/admin';
-import { validateBody } from '../middleware/validation';
+import { validateBody, validateUuidParam } from '../middleware/validation';
 import {
   updateOrderStatusSchema,
   couponSchema,
@@ -62,6 +62,7 @@ router.delete('/coupons/:id', deleteCoupon);
 
 // Visitors
 router.get('/visitors', getVisitorStats);
+router.get('/visitors/:id/journey', validateUuidParam('id'), getVisitorJourney);
 
 // Categories
 router.get('/categories', getCategories);

@@ -176,6 +176,7 @@ model CartItem {
 }
 
 model Order {
+  analyticsSessionId String?
   id                String        @id @default(uuid())
   orderNumber       String        @unique
   userId            String?
@@ -209,6 +210,7 @@ model Order {
   items   OrderItem[]
   reviews Review[]
   returnRequest ReturnRequest?
+  @@index([analyticsSessionId])
 }
 
 enum PaymentMethod {
@@ -344,6 +346,12 @@ model Newsletter {
 }
 
 model Visitor {
+  source     String?
+  medium     String?
+  campaign   String?
+  isBot      Boolean @default(false)
+  lastSeenAt DateTime @default(now())
+  events     VisitorEvent[]
   id         String   @id @default(uuid())
   ip         String
   userAgent  String?  @db.Text
@@ -371,6 +379,7 @@ model Visitor {
 }
 
 model VisitorPageView {
+  eventKey   String? @unique
   id        String   @id @default(uuid())
   visitorId String
   page      String
@@ -381,6 +390,17 @@ model VisitorPageView {
 
   @@index([visitorId, createdAt])
   @@index([page])
+}
+
+model VisitorEvent {
+  id         String @id @default(uuid())
+  eventKey   String @unique
+  visitorId  String
+  productId  String
+  createdAt  DateTime @default(now())
+  visitor    Visitor @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  @@index([visitorId, createdAt])
+  @@index([createdAt])
 }
 
 model BlogPost {
