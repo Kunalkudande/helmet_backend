@@ -1,3 +1,4 @@
+import { lowStockPage } from '../utils/inventory';
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
 import { AuthRequest, DashboardStats } from '../types';
@@ -43,19 +44,7 @@ export async function getDashboardStats(
         orderBy: { createdAt: 'desc' },
         take: 10,
       }),
-      // Low stock products (stock <= 5)
-      prisma.product.findMany({
-        where: { isActive: true, stock: { lte: 5 } },
-        select: {
-          id: true,
-          name: true,
-          stock: true,
-          sku: true,
-          images: { where: { isPrimary: true }, take: 1 },
-        },
-        orderBy: { stock: 'asc' },
-        take: 10,
-      }),
+      lowStockPage(1, 10),
     ]);
 
     // Monthly sales for the last 6 months
@@ -89,7 +78,7 @@ export async function getDashboardStats(
       totalProducts,
       totalCustomers,
       recentOrders,
-      lowStockProducts,
+      lowStockProducts: lowStockProducts.items,
       monthlySales: Object.entries(monthlySales).map(([month, data]) => ({
         month,
         revenue: data.revenue,

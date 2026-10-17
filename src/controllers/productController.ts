@@ -1,3 +1,5 @@
+import { syncProductVariants } from '../utils/productVariants';
+import { inventoryStatus } from '../utils/inventory';
 import { resolveProductSku } from '../utils/productSku';
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/database';
@@ -193,6 +195,7 @@ export async function getAdminProducts(
         take: limitNum,
         orderBy: { [sortField]: order },
         include: {
+          variants: { select: { id: true, size: true, color: true, stock: true } },
           images: {
             select: { id: true, imageUrl: true, isPrimary: true, displayOrder: true },
             orderBy: [{ isPrimary: 'desc' }, { displayOrder: 'asc' }],
@@ -204,7 +207,7 @@ export async function getAdminProducts(
 
     const totalPages = Math.ceil(total / limitNum);
     const result: PaginatedResponse<typeof products[0]> = {
-      items: products,
+      items: products.map(inventoryStatus),
       total,
       page: pageNum,
       limit: limitNum,
@@ -480,6 +483,7 @@ export async function createProduct(
       price,
       discountPrice,
       stock,
+      lowStockThreshold,
       sku,
       specifications,
       variants,
@@ -519,6 +523,7 @@ export async function createProduct(
         price,
         discountPrice: discountPrice || null,
         stock,
+        lowStockThreshold,
         sku: productSku,
         specifications: specifications
           ? { create: specifications }
@@ -526,7 +531,7 @@ export async function createProduct(
         variants: variants
           ? {
               create: variants.map((v: { size: string; color: string; stock: number; additionalPrice?: number }, idx: number) => ({
-                ...v,
+                size: v.size, color: v.color, stock: v.stock,
                 sku: `${productSku}-${v.size}-${v.color.replace(/\s/g, '')}-${idx}`.toUpperCase(),
                 additionalPrice: v.additionalPrice || 0,
               })),
@@ -598,42 +603,12 @@ export async function updateProduct(
 
     syncDetailCertifications(updateData.specifications);
 
-    // Handle specifications update
-    if (updateData.specifications) {
-      await prisma.productSpecification.upsert({
-        where: { productId: id },
-        update: updateData.specifications,
-        create: { ...updateData.specifications, productId: id },
-      });
-      delete updateData.specifications;
-    }
-
-    // Handle variants update
-    if (updateData.variants) {
-      // Delete existing variants and recreate
-      await prisma.productVariant.deleteMany({ where: { productId: id } });
-      await prisma.productVariant.createMany({
-        data: updateData.variants.map(
-          (v: { size: string; color: string; stock: number; additionalPrice?: number }, idx: number) => ({
-            productId: id,
-            ...v,
-            sku: `${existing.sku}-${v.size}-${v.color.replace(/\s/g, '')}-${idx}`.toUpperCase(),
-            additionalPrice: v.additionalPrice || 0,
-          })
-        ),
-      });
-      delete updateData.variants;
-    }
-
-    const product = await prisma.product.update({
-      where: { id },
-      data: updateData,
-      include: {
-        images: true,
-        variants: true,
-        specifications: true,
-      },
-    });
+    const { specifications, variants, ...fields } = updateData;
+    const product = await prisma.$transaction(async tx => {
+      if (specifications) await tx.productSpecification.upsert({ where: { productId: id }, update: specifications, create: { ...specifications, productId: id } });
+      if (variants) await syncProductVariants(tx, id, fields.sku || existing.sku, variants);
+      return tx.product.update({ where: { id }, data: fields, include: { images: true, variants: true, specifications: true } });
+    }, { timeout: 20000 });
 
     await deleteCachePattern('products:*');
     await deleteCachePattern(`product:${existing.slug}`);
@@ -670,7 +645,7 @@ export async function deleteProduct(
 
     // Delete all product images from Cloudinary
     for (const image of product.images) {
-      if (image.imageUrl && image.imageUrl.includes('cloudinary')) {
+      if (image.imageUrl && image.imageUrl.includes('cloudinary') && await prisma.productImage.count({ where: { imageUrl: image.imageUrl, productId: { not: id } } }) === 0) {
         try {
           const parts = image.imageUrl.split('/upload/');
           if (parts[1]) {
@@ -796,7 +771,7 @@ export async function deleteProductImage(
     if (!image || image.productId !== id) throw new NotFoundError('Image');
 
     // Try to delete from Cloudinary (extract public_id from URL)
-    if (image.imageUrl.includes('cloudinary')) {
+    if (image.imageUrl.includes('cloudinary') && await prisma.productImage.count({ where: { imageUrl: image.imageUrl, id: { not: imageId } } }) === 0) {
       try {
         const parts = image.imageUrl.split('/upload/');
         if (parts[1]) {

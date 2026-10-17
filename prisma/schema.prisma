@@ -45,6 +45,7 @@ model Product {
   price         Decimal  @db.Decimal(10, 2)
   discountPrice Decimal? @db.Decimal(10, 2)
   stock         Int
+  lowStockThreshold Int @default(5)
   sku           String   @unique
   isActive      Boolean  @default(true)
   rating        Decimal  @default(0) @db.Decimal(3, 2)
@@ -409,4 +410,16 @@ model SiteSetting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// Reviewed imports are bound to the admin and committed once, even after a network retry.
+model ProductImportBatch {
+  id        String   @id @default(uuid())
+  ownerId   String
+  payload   Json
+  result    Json?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
 }

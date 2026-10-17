@@ -58,6 +58,7 @@ export const createProductSchema = z.object({
   price: z.number().positive('Price must be greater than 0'),
   discountPrice: z.number().positive('Discount price must be greater than 0').optional().nullable(),
   stock: z.number().int().min(0, 'Stock cannot be negative'),
+  lowStockThreshold: z.number().int().min(0).max(1000000).optional(),
   isActive: z.boolean().optional(),
   sku: z.preprocess(value => typeof value === 'string' && !value.trim() ? undefined : value, productSkuSchema.optional()),
   specifications: z
@@ -77,6 +78,7 @@ export const createProductSchema = z.object({
   variants: z
     .array(
       z.object({
+        id: z.string().uuid().optional(),
         size: z.enum(['XS', 'S', 'M', 'L', 'XL', 'XXL', 'FREE_SIZE']),
         color: z.string().min(1, 'Color is required'),
         stock: z.number().int().min(0, 'Stock cannot be negative'),
