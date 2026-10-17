@@ -273,7 +273,7 @@ export async function getProductBySlug(
       where: { slug, isActive: true },
       include: {
         images: { orderBy: [{ isPrimary: 'desc' }, { displayOrder: 'asc' }] },
-        variants: true,
+        variants: { orderBy: { id: 'asc' } },
         specifications: true,
         reviews: {
           where: { isApproved: true },

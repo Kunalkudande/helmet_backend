@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { escapeXml, sitemapXml, merchantItem } from '../src/utils/seoXml';
+assert.equal(escapeXml('A&B<"'), 'A&amp;B&lt;&quot;');
+const xml = sitemapXml([{ path: '/products?category=COILS&page=2', updatedAt: new Date('2026-10-17T00:00:00Z'), images: ['https://example.com/image?a=1&b=2', 'javascript:invalid'] }], 'https://bikersbrain.in');
+assert.ok(xml.includes('category=COILS&amp;page=2'));
+assert.ok(xml.includes('<lastmod>2026-10-17T00:00:00.000Z</lastmod>'));
+assert.ok(!xml.includes('javascript:'));
+const product = { name: 'Coil & Cable', slug: 'coil', description: '<p>Replacement & care</p>', brand: 'Test', sku: 'TEST-001', price: 650, discountPrice: 600, stock: 0, images: [{ imageUrl: 'https://example.com/coil.jpg' }], variants: [{ stock: 0, additionalPrice: 10 }, { stock: 3, additionalPrice: 50 }] };
+const feed = merchantItem(product, 'https://bikersbrain.in');
+assert.ok(feed.includes('<g:price>700.00 INR</g:price>'));
+assert.ok(feed.includes('<g:sale_price>650.00 INR</g:sale_price>'));
+assert.ok(feed.includes('<g:availability>in_stock</g:availability>'));
+assert.ok(feed.includes('Coil &amp; Cable'));
+assert.ok(!feed.includes('<p>'));
+assert.ok(!feed.includes('gtin'));
+assert.equal(merchantItem({ ...product, images: [] }), '');
+console.log('SEO XML and merchant feed checks passed.');

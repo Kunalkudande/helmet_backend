@@ -29,6 +29,7 @@ import adminRoutes from './routes/adminRoutes';
 import visitorRoutes from './routes/visitorRoutes';
 import blogRoutes from './routes/blogRoutes';
 import contactRoutes from './routes/contactRoutes';
+import seoRoutes from './routes/seoRoutes';
 
 const app = express();
 const PORT = parseInt(env.PORT, 10);
@@ -83,6 +84,7 @@ app.use(
 
 // Rate limiting
 app.use('/api/', apiLimiter);
+app.use('/api/seo', seoRoutes);
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));

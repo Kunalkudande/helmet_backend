@@ -82,7 +82,7 @@ export async function getPostBySlug(
     // Increment views
     await prisma.blogPost.update({
       where: { id: post.id },
-      data: { views: { increment: 1 } },
+      data: { views: { increment: 1 }, updatedAt: post.updatedAt },
     });
 
     res.json({ success: true, data: post });
